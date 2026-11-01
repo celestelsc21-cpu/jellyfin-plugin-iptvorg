@@ -61,7 +61,7 @@ internal static partial class ProgrammeClassifier
 
         kind |= ChannelKind(channelCategory);
 
-        // A film is not a series even on a series channel.
+        // A film is not a series even on a series channel; a cartoon goes to "Kids" only.
         if ((kind & Kinds.Movie) != 0)
         {
             kind &= ~Kinds.Series;
@@ -77,16 +77,32 @@ internal static partial class ProgrammeClassifier
 
         if ((kind & Kinds.Series) != 0 && programme.Element("episode-num") is null)
         {
+            // Jellyfin lists a programme under "Series" only when it has an episode number.
             var text = (title?.Value ?? string.Empty) + " " + (programme.Element("sub-title")?.Value ?? string.Empty) + " " + (programme.Element("desc")?.Value ?? string.Empty);
             var episode = FindNumber(EpisodeRegex(), text);
-            if (episode is > 0)
-            {
-                var season = FindNumber(SeasonRegex(), text);
-                var seasonIndex = season is > 0 ? (season.Value - 1).ToString(CultureInfo.InvariantCulture) : string.Empty;
-                var value = string.Create(CultureInfo.InvariantCulture, $"{seasonIndex}.{episode.Value - 1}.");
-                programme.Add(new XElement("episode-num", new XAttribute("system", "xmltv_ns"), value));
-            }
+            var season = FindNumber(SeasonRegex(), text);
+            var seasonIndex = season is > 0 ? (season.Value - 1).ToString(CultureInfo.InvariantCulture) : string.Empty;
+
+            // Without a number in the text, episode 1 is used; xmltv_ns is zero-based.
+            var episodeIndex = episode is > 0 ? episode.Value - 1 : 0;
+            programme.Add(new XElement(
+                "episode-num",
+                new XAttribute("system", "xmltv_ns"),
+                string.Create(CultureInfo.InvariantCulture, $"{seasonIndex}.{episodeIndex}.")));
+
+            // A programme id keeps Jellyfin from treating different shows with the same episode
+            // number as one show (it builds the show id from the number alone otherwise).
+            var identity = episode is > 0
+                ? string.Create(CultureInfo.InvariantCulture, $"{title?.Value}|{seasonIndex}|{episodeIndex}")
+                : (title?.Value ?? string.Empty) + "|" + (string?)programme.Attribute("start");
+            programme.Add(new XElement("episode-num", new XAttribute("system", "dd_progid"), "iptvorg." + StableId(identity)));
         }
+    }
+
+    private static string StableId(string value)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(hash, 0, 12).ToLowerInvariant();
     }
 
     private static void AddCategory(XElement programme, HashSet<string> existing, Kinds kind, Kinds flag, string category)
@@ -103,9 +119,8 @@ internal static partial class ProgrammeClassifier
         return p switch
         {
             "х/ф" or "к/ф" or "фильм" => Kinds.Movie,
-            "м/ф" or "мультфильм" => Kinds.Movie | Kinds.Kids,
             "т/с" or "сериал" or "телесериал" or "д/с" => Kinds.Series,
-            "м/с" or "мультсериал" => Kinds.Series | Kinds.Kids,
+            "м/ф" or "мультфильм" or "м/с" or "мультсериал" => Kinds.Kids,
             _ => Kinds.None
         };
     }

@@ -37,13 +37,17 @@ public class ProgrammeClassifierTests
     }
 
     [Fact]
-    public void Cartoon_IsMovieAndKids()
+    public void Cartoons_GoToKids()
     {
-        var p = Programme("м/ф Ну, погоди!");
+        var film = Programme("м/ф Ну, погоди!");
+        var series = Programme("м/с Смешарики");
 
-        ProgrammeClassifier.Classify(p, null);
+        ProgrammeClassifier.Classify(film, null);
+        ProgrammeClassifier.Classify(series, null);
 
-        Assert.Equal(new[] { "movie", "kids" }, Categories(p));
+        Assert.Equal(new[] { "kids" }, Categories(film));
+        Assert.Equal(new[] { "kids" }, Categories(series));
+        Assert.Null(series.Element("episode-num"));
     }
 
     [Fact]
@@ -54,19 +58,37 @@ public class ProgrammeClassifierTests
         ProgrammeClassifier.Classify(p, null);
 
         Assert.Equal("Улицы разбитых фонарей. 12-я серия", p.Element("title")!.Value);
-        var episode = p.Element("episode-num")!;
-        Assert.Equal("xmltv_ns", (string?)episode.Attribute("system"));
+        var episode = p.Elements("episode-num").Single(e => (string?)e.Attribute("system") == "xmltv_ns");
         Assert.Equal("1.11.", episode.Value);
+        Assert.Single(p.Elements("episode-num"), e => (string?)e.Attribute("system") == "dd_progid");
     }
 
     [Fact]
-    public void Series_WithoutNumber_NoFakeEpisode()
+    public void Series_WithoutNumber_StillSeries()
     {
         var p = Programme("т/с Тайны следствия");
+        var doc = Programme("д/с Необыкновенные люди");
+        p.SetAttributeValue("start", "20261101180000 +0300");
 
         ProgrammeClassifier.Classify(p, null);
+        ProgrammeClassifier.Classify(doc, null);
 
-        Assert.Null(p.Element("episode-num"));
+        Assert.Equal("0.", p.Elements("episode-num").Single(e => (string?)e.Attribute("system") == "xmltv_ns").Value.TrimStart('.'));
+        Assert.NotNull(doc.Element("episode-num"));
+        Assert.Equal("Необыкновенные люди", doc.Element("title")!.Value);
+    }
+
+    [Fact]
+    public void Series_DifferentShows_GetDifferentProgrammeIds()
+    {
+        var a = Programme("т/с Первый сериал. 3-я серия");
+        var b = Programme("т/с Второй сериал. 3-я серия");
+
+        ProgrammeClassifier.Classify(a, null);
+        ProgrammeClassifier.Classify(b, null);
+
+        string Id(XElement x) => x.Elements("episode-num").Single(e => (string?)e.Attribute("system") == "dd_progid").Value;
+        Assert.NotEqual(Id(a), Id(b));
     }
 
     [Fact]
