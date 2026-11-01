@@ -11,7 +11,7 @@ namespace Jellyfin.Plugin.IptvOrg.Guide;
 /// Links playlist channels to guide channels that iptv-org lists for a site but has not linked
 /// to any channel (entries of <c>guides.json</c> without <c>channel</c>), by comparing names.
 /// Used only for the sites whose whole XMLTV file the plugin reads anyway (see
-/// <see cref="SiteGuideFiles"/>), and deliberately strict: a link is made only when
+/// <see cref="SiteGuideFiles"/>). Deliberately strict; all of these must hold for a link.
 /// <list type="bullet">
 /// <item>the channel is in the site's area (broadcast language or country);</item>
 /// <item>the name key points to exactly one unlinked guide channel of the site, which iptv-org
