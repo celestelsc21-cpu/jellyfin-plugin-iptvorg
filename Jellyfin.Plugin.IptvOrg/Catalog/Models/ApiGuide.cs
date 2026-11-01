@@ -24,6 +24,10 @@ internal sealed class ApiGuide
     [JsonPropertyName("site_id")]
     public string? SiteId { get; set; }
 
+    /// <summary>Gets or sets the channel name used by the site.</summary>
+    [JsonPropertyName("site_name")]
+    public string? SiteName { get; set; }
+
     /// <summary>Gets or sets the hosted guide files that contain this channel.</summary>
     [JsonPropertyName("sources")]
     public IReadOnlyList<ApiGuideSource>? Sources { get; set; }

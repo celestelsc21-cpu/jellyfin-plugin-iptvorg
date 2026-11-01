@@ -154,6 +154,17 @@
                     </div>
                     <div class="checkboxContainer">
                         <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgMatchByName" />
+                            <span>Искать телегид по названию, если iptv-org не связал канал с гидом</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            Например, «Belarus-1» ↔ «Беларусь 1 HD», «Belarus-4 Gomel» ↔ «Беларусь 4 Гомель» в гиде epg.iptvx.one.
+                            Связь ставится, только если название однозначно: одно такое в гиде и один такой канал в каталоге для России и стран СНГ.
+                            Применяется после обновления каналов.
+                        </div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
                             <input is="emby-checkbox" type="checkbox" id="IptvOrgDescriptions" />
                             <span>Добавлять описание канала: страна, регионы, языки, категории</span>
                         </label>
@@ -366,6 +377,7 @@
                         $('#IptvOrgNsfw').checked = !!config.IncludeNsfw;
                         $('#IptvOrgEnableGuide').checked = !!config.EnableGuide;
                         $('#IptvOrgGuideNames').checked = config.UseGuideChannelNames !== false;
+                        $('#IptvOrgMatchByName').checked = config.MatchGuideByName !== false;
                         $('#IptvOrgDescriptions').checked = config.ChannelDescriptions !== false;
                         $('#IptvOrgClassify').checked = config.ClassifyProgrammes !== false;
                         $('#IptvOrgSports').checked = config.DetectSportsBroadcasts !== false;
@@ -472,6 +484,7 @@
                         config.IncludeNsfw = $('#IptvOrgNsfw').checked;
                         config.EnableGuide = $('#IptvOrgEnableGuide').checked;
                         config.UseGuideChannelNames = $('#IptvOrgGuideNames').checked;
+                        config.MatchGuideByName = $('#IptvOrgMatchByName').checked;
                         config.ChannelDescriptions = $('#IptvOrgDescriptions').checked;
                         config.ClassifyProgrammes = $('#IptvOrgClassify').checked;
                         config.DetectSportsBroadcasts = $('#IptvOrgSports').checked;

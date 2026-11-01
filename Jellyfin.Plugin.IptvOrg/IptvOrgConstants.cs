@@ -38,6 +38,11 @@ internal static class IptvOrgConstants
     public const string NamesFileName = "names.json";
 
     /// <summary>
+    /// File name of the guide channels found by name.
+    /// </summary>
+    public const string NameMatchesFileName = "guidematches.json";
+
+    /// <summary>
     /// File name of the stream check cache.
     /// </summary>
     public const string StreamCheckFileName = "streamcheck.json";

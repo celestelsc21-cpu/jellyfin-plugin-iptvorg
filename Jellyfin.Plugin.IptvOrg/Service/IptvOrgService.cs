@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
 using Jellyfin.Plugin.IptvOrg.Catalog;
+using Jellyfin.Plugin.IptvOrg.Catalog.Models;
 using Jellyfin.Plugin.IptvOrg.Configuration;
 using Jellyfin.Plugin.IptvOrg.Guide;
 using Jellyfin.Plugin.IptvOrg.Localization;
@@ -399,6 +400,16 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
             ? ChannelDescriptionBuilder.BuildAll(catalog, groups, LanguageCodes.PrefersRussian(languages))
             : new Dictionary<string, string>();
 
+        IReadOnlyList<ApiGuide> nameMatches = config.MatchGuideByName
+            ? GuideNameMatcher.Match(
+                catalog,
+                groups
+                    .Where(g => g.Channel is not null)
+                    .SelectMany(g => g.Streams.Select(s => (g.Channel!.Id, s.FeedId)))
+                    .Distinct()
+                    .ToArray())
+            : [];
+
         // Keep only what the final step needs, so the large lists can be collected during
         // the (possibly long) stream checks. Async locals live until the method returns.
         var slim = catalog with
@@ -417,6 +428,8 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
         // (possibly long) stream checks so the lists appear right after the catalog download.
         Directory.CreateDirectory(_paths.DataDirectory);
         await WriteFileAtomicallyAsync(_paths.FiltersPath, JsonSerializer.Serialize(filters), cancellationToken).ConfigureAwait(false);
+        await WriteFileAtomicallyAsync(_paths.NameMatchesPath, JsonSerializer.Serialize(nameMatches), cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation("IPTV-org guide links found by channel name: {Count}", nameMatches.Count);
         progress.Report(5);
 
         IReadOnlySet<string>? dead = null;
@@ -729,8 +742,31 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
         }
 
         var guides = await CatalogLoader.LoadGuidesAsync(_paths.CacheDirectory, cancellationToken).ConfigureAwait(false);
-        var sources = GuideSourcePlanner.Plan(entries, guides, config.MaxGuideSources);
+        IReadOnlyList<ApiGuide> nameMatches = config.MatchGuideByName ? await LoadNameMatchesAsync(cancellationToken).ConfigureAwait(false) : [];
+        var sources = GuideSourcePlanner.Plan(entries, guides, config.MaxGuideSources, nameMatches);
         return (entries, sources);
+    }
+
+    private async Task<IReadOnlyList<ApiGuide>> LoadNameMatchesAsync(CancellationToken cancellationToken)
+    {
+        if (!File.Exists(_paths.NameMatchesPath))
+        {
+            return [];
+        }
+
+        try
+        {
+            var stream = new FileStream(_paths.NameMatchesPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous);
+            await using (stream.ConfigureAwait(false))
+            {
+                return await JsonSerializer.DeserializeAsync<List<ApiGuide>>(stream, cancellationToken: cancellationToken).ConfigureAwait(false) ?? [];
+            }
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "IPTV-org guide links by name could not be read; they are rebuilt with the next channel update");
+            return [];
+        }
     }
 
     private async Task<int> AddGuideSourceAsync(XmltvMerger merger, GuideSource source, CancellationToken cancellationToken)

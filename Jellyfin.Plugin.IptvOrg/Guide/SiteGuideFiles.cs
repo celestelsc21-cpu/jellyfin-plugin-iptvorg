@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Jellyfin.Plugin.IptvOrg.Guide;
 
@@ -25,6 +26,15 @@ internal static class SiteGuideFiles
         ["energeek.cl"] = new("https://raw.githubusercontent.com/luisms123/tdt/master/guiaenergeek.xml")
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
+    // Sites whose unlinked channels may be linked by name. epg.iptvx.one: Russian-language names,
+    // Russia and the former USSR countries.
+    private static readonly FrozenDictionary<string, NameMatchRule> NameMatchRules = new Dictionary<string, NameMatchRule>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["epg.iptvx.one"] = new(
+            "rus",
+            new[] { "RU", "BY", "UA", "KZ", "KG", "UZ", "TJ", "TM", "AM", "AZ", "GE", "MD" }.ToFrozenSet(StringComparer.Ordinal))
+    }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Gets the XMLTV file of a site.
     /// </summary>
@@ -35,5 +45,17 @@ internal static class SiteGuideFiles
     {
         url = null;
         return !string.IsNullOrEmpty(site) && Files.TryGetValue(site, out url);
+    }
+
+    /// <summary>
+    /// Gets the area in which a site's unlinked channels may be linked by name.
+    /// </summary>
+    /// <param name="site">Site from <c>guides.json</c>.</param>
+    /// <param name="rule">The rule.</param>
+    /// <returns><c>true</c> when name matching is allowed for the site.</returns>
+    public static bool TryGetNameMatchRule(string? site, [NotNullWhen(true)] out NameMatchRule? rule)
+    {
+        rule = null;
+        return !string.IsNullOrEmpty(site) && NameMatchRules.TryGetValue(site, out rule);
     }
 }

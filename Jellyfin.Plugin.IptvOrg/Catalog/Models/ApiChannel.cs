@@ -16,6 +16,10 @@ internal sealed class ApiChannel
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets other names of the channel (often the native-script name).</summary>
+    [JsonPropertyName("alt_names")]
+    public IReadOnlyList<string>? AltNames { get; set; }
+
     /// <summary>Gets or sets the ISO 3166-1 alpha-2 country code.</summary>
     [JsonPropertyName("country")]
     public string? Country { get; set; }

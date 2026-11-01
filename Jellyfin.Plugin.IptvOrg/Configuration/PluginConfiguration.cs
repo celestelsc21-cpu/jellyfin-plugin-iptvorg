@@ -133,6 +133,13 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool UseGuideChannelNames { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets a value indicating whether channels that iptv-org has not linked to a guide are
+    /// linked by name to a guide channel of a site whose whole guide file the plugin reads
+    /// (strict: unique name in the site's area only).
+    /// </summary>
+    public bool MatchGuideByName { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets a value indicating whether channels get a description with their country,
     /// regions, languages and categories (shown on the channel page in Jellyfin).
     /// </summary>

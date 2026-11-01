@@ -20,11 +20,14 @@ internal static class GuideSourcePlanner
     /// <param name="entries">Playlist entries.</param>
     /// <param name="guides">Guide mappings from <c>guides.json</c>.</param>
     /// <param name="maxSources">Maximum number of files to download.</param>
+    /// <param name="nameMatches">Guide channels found by name (<see cref="GuideNameMatcher"/>), used for
+    /// channels that still have no guide after the iptv-org links.</param>
     /// <returns>Sources ordered by how many playlist channels they cover (most first).</returns>
     public static IReadOnlyList<GuideSource> Plan(
         IReadOnlyList<PlaylistEntry> entries,
         IReadOnlyList<ApiGuide> guides,
-        int maxSources)
+        int maxSources,
+        IReadOnlyList<ApiGuide>? nameMatches = null)
     {
         ArgumentNullException.ThrowIfNull(entries);
         ArgumentNullException.ThrowIfNull(guides);
@@ -89,6 +92,25 @@ internal static class GuideSourcePlanner
                     && !string.Equals(e.FeedId, guide.Feed, StringComparison.Ordinal)
                     && !PlaylistBuilder.IsTimeshift(e.FeedId, null)
                     && !covered.Contains(e.TvgId!))
+                .Select(e => e.TvgId!)
+                .ToArray();
+            if (targets.Length > 0 && AddGuide(plans, guide, targets))
+            {
+                covered.UnionWith(targets);
+            }
+        }
+
+        // Pass 3: guide channels found by name, for the exact feed, only where nothing else applies.
+        foreach (var guide in nameMatches ?? [])
+        {
+            if (string.IsNullOrEmpty(guide.Channel)
+                || !byChannel.TryGetValue(guide.Channel, out var channelEntries))
+            {
+                continue;
+            }
+
+            var targets = channelEntries
+                .Where(e => string.Equals(e.FeedId, guide.Feed, StringComparison.Ordinal) && !covered.Contains(e.TvgId!))
                 .Select(e => e.TvgId!)
                 .ToArray();
             if (targets.Length > 0 && AddGuide(plans, guide, targets))
