@@ -63,6 +63,7 @@ internal sealed partial class XmltvMerger
                 _channelCategories.TryAdd(entry.TvgId, entry.CategoryId);
             }
         }
+
         _entries = entries;
     }
 
