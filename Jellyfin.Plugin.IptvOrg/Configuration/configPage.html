@@ -169,6 +169,24 @@
                             а также по категориям в гиде и категории канала. Номер серии берётся из текста, если он есть.
                         </div>
                     </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgSports" />
+                            <span>Трансляции матчей с любых каналов — в «Спорт»</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            Передача попадает в «Спорт», только если в её названии одновременно есть вид спорта или турнир (футбол, хоккей, РПЛ, КХЛ, Лига чемпионов…)
+                            и признак самой игры (соперники через тире, «матч», «финал», «тур», «гонка», «бой»…), и нет слов вроде «обзор», «новости», «итоги», «студия», «д/ф».
+                            Фильмы, сериалы и мультфильмы не учитываются.
+                        </div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgLiveSports" />
+                            <span>В «Спорт» — только прямые трансляции</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Нужна пометка «прямая трансляция» / «прямой эфир» в названии или описании. Действует и на спортивные каналы.</div>
+                    </div>
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="IptvOrgMaxGuideSources">Максимум файлов гида за обновление</label>
                         <input id="IptvOrgMaxGuideSources" type="number" is="emby-input" min="1" max="50" step="1" required />
@@ -350,6 +368,8 @@
                         $('#IptvOrgGuideNames').checked = config.UseGuideChannelNames !== false;
                         $('#IptvOrgDescriptions').checked = config.ChannelDescriptions !== false;
                         $('#IptvOrgClassify').checked = config.ClassifyProgrammes !== false;
+                        $('#IptvOrgSports').checked = config.DetectSportsBroadcasts !== false;
+                        $('#IptvOrgLiveSports').checked = !!config.LiveSportsOnly;
                         $('#IptvOrgPreferredLanguages').value = (config.PreferredLanguages || []).join(', ');
                         $('#IptvOrgMaxGuideSources').value = config.MaxGuideSources;
                         renderCategories(results[1] || [], config.Categories || [], !!config.IncludeNsfw);
@@ -454,6 +474,8 @@
                         config.UseGuideChannelNames = $('#IptvOrgGuideNames').checked;
                         config.ChannelDescriptions = $('#IptvOrgDescriptions').checked;
                         config.ClassifyProgrammes = $('#IptvOrgClassify').checked;
+                        config.DetectSportsBroadcasts = $('#IptvOrgSports').checked;
+                        config.LiveSportsOnly = $('#IptvOrgLiveSports').checked;
                         config.PreferredLanguages = $('#IptvOrgPreferredLanguages').value.split(/[\s,;]+/).filter(function (v) { return v; });
                         config.MaxGuideSources = parseInt($('#IptvOrgMaxGuideSources').value, 10) || 10;
                         config.Countries = collectFilter('country');

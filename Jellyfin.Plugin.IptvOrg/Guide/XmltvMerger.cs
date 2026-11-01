@@ -30,6 +30,8 @@ internal sealed partial class XmltvMerger
     private readonly Dictionary<string, string> _channelNames = new(StringComparer.Ordinal);
     private readonly IReadOnlyList<string> _preferredLanguages;
     private readonly bool _classify;
+    private readonly bool _detectSports;
+    private readonly bool _liveSportsOnly;
     private readonly Dictionary<string, string> _channelCategories = new(StringComparer.Ordinal);
     private readonly DateTimeOffset _keepFrom;
 
@@ -42,12 +44,16 @@ internal sealed partial class XmltvMerger
     /// <param name="now">Current time; programmes that ended more than 6 hours earlier are dropped.</param>
     /// <param name="preferredLanguages">Preferred languages (ISO 639-1), most preferred first; empty keeps everything as is.</param>
     /// <param name="classifyProgrammes">Whether genre markers for Jellyfin's Live TV sections are added (see <see cref="ProgrammeClassifier"/>).</param>
+    /// <param name="detectSports">Whether sports broadcasts on any channel are recognised from the text.</param>
+    /// <param name="liveSportsOnly">Whether only live sports broadcasts go to "Sports".</param>
     public XmltvMerger(
         XmlWriter writer,
         IReadOnlyList<PlaylistEntry> entries,
         DateTimeOffset now,
         IReadOnlyList<string>? preferredLanguages = null,
-        bool classifyProgrammes = false)
+        bool classifyProgrammes = false,
+        bool detectSports = false,
+        bool liveSportsOnly = false)
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(entries);
@@ -56,6 +62,8 @@ internal sealed partial class XmltvMerger
         _keepFrom = now.AddHours(-6);
         _preferredLanguages = preferredLanguages ?? [];
         _classify = classifyProgrammes;
+        _detectSports = detectSports;
+        _liveSportsOnly = liveSportsOnly;
         foreach (var entry in entries)
         {
             if (entry.TvgId is not null)
@@ -222,7 +230,7 @@ internal sealed partial class XmltvMerger
                         var copy = targets.Count == 1 ? programme : new XElement(programme);
                         if (_classify)
                         {
-                            ProgrammeClassifier.Classify(copy, _channelCategories.GetValueOrDefault(target));
+                            ProgrammeClassifier.Classify(copy, _channelCategories.GetValueOrDefault(target), _detectSports, _liveSportsOnly);
                         }
 
                         copy.SetAttributeValue("channel", target);

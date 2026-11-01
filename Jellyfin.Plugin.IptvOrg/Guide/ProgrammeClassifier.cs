@@ -33,11 +33,14 @@ internal static partial class ProgrammeClassifier
     /// </summary>
     /// <param name="programme">Programme element.</param>
     /// <param name="channelCategory">iptv-org category of the channel (for example <c>kids</c>), or <c>null</c>.</param>
-    public static void Classify(XElement programme, string? channelCategory)
+    /// <param name="detectSports">Whether sports broadcasts on any channel are recognised from the text (see <see cref="SportsDetector"/>).</param>
+    /// <param name="liveSportsOnly">Whether only live sports broadcasts go to "Sports".</param>
+    public static void Classify(XElement programme, string? channelCategory, bool detectSports = false, bool liveSportsOnly = false)
     {
         ArgumentNullException.ThrowIfNull(programme);
 
         var kind = Kinds.None;
+        var prefixKind = Kinds.None;
 
         var title = programme.Element("title");
         if (title is not null)
@@ -45,7 +48,8 @@ internal static partial class ProgrammeClassifier
             var match = PrefixRegex().Match(title.Value);
             if (match.Success)
             {
-                kind |= PrefixKind(match.Groups["p"].Value);
+                prefixKind = PrefixKind(match.Groups["p"].Value);
+                kind |= prefixKind;
                 var rest = title.Value[match.Length..].Trim();
                 if (rest.Length > 0)
                 {
@@ -60,6 +64,25 @@ internal static partial class ProgrammeClassifier
         }
 
         kind |= ChannelKind(channelCategory);
+
+        var subTitle = programme.Element("sub-title")?.Value;
+        var description = programme.Element("desc")?.Value;
+
+        // Films, series and cartoons are never sports broadcasts, whatever their title says.
+        if (detectSports
+            && prefixKind == Kinds.None
+            && SportsDetector.IsSportsBroadcast(title?.Value, subTitle, description, liveSportsOnly))
+        {
+            kind |= Kinds.Sports;
+        }
+
+        // "Live only" also applies to programmes of sports channels (reviews, reruns, studios stay out).
+        if (liveSportsOnly
+            && (kind & Kinds.Sports) != 0
+            && !SportsDetector.IsLive((title?.Value ?? string.Empty) + " " + subTitle + " " + description))
+        {
+            kind &= ~Kinds.Sports;
+        }
 
         // A film is not a series even on a series channel; a cartoon goes to "Kids" only.
         if ((kind & Kinds.Movie) != 0)

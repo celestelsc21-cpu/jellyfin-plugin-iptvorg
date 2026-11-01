@@ -146,6 +146,17 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool ClassifyProgrammes { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets a value indicating whether sports broadcasts (matches, races, fights) on any
+    /// channel are put into "Sports", recognised strictly from the programme title.
+    /// </summary>
+    public bool DetectSportsBroadcasts { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether only live sports broadcasts go to "Sports".
+    /// </summary>
+    public bool LiveSportsOnly { get; set; }
+
+    /// <summary>
     /// Gets or sets the maximum number of guide files downloaded per guide update
     /// (protects slow servers and networks).
     /// </summary>

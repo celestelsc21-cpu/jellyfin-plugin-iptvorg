@@ -643,7 +643,9 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
                     entries,
                     _timeProvider.GetUtcNow(),
                     LanguageCodes.Normalize(config.PreferredLanguages),
-                    config.ClassifyProgrammes);
+                    config.ClassifyProgrammes,
+                    config.DetectSportsBroadcasts,
+                    config.LiveSportsOnly);
                 await merger.WriteHeaderAsync().ConfigureAwait(false);
 
                 for (var i = 0; i < sources.Count; i++)
