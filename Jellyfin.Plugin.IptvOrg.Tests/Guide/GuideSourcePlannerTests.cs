@@ -115,6 +115,37 @@ public class GuideSourcePlannerTests
     }
 
     [Fact]
+    public void Plan_HdWithoutOwnGuide_BorrowsSdGuide()
+    {
+        var entries = new[] { Entry("Evrokino.ru", "HD") };
+        var guides = new[]
+        {
+            new ApiGuide { Channel = "Evrokino.ru", Feed = "SD", Site = "epg.iptvx.one", SiteId = "evrokino" },
+            new ApiGuide { Channel = "Evrokino.ru", Feed = "HD", Site = "tv.mail.ru", SiteId = "2751" }
+        };
+
+        var source = Assert.Single(GuideSourcePlanner.Plan(entries, guides, 10));
+
+        Assert.Equal(new[] { "Evrokino.ru@HD" }, source.IdMap["evrokino"]);
+    }
+
+    [Fact]
+    public void Plan_OwnGuideWins_NoBorrowing()
+    {
+        var entries = new[] { Entry("A.ru", "HD") };
+        var guides = new[]
+        {
+            new ApiGuide { Channel = "A.ru", Feed = "HD", Site = "epg.iptvx.one", SiteId = "a-hd" },
+            new ApiGuide { Channel = "A.ru", Feed = "SD", Site = "epg.iptvx.one", SiteId = "a-sd" }
+        };
+
+        var source = Assert.Single(GuideSourcePlanner.Plan(entries, guides, 10));
+
+        Assert.True(source.IdMap.ContainsKey("a-hd"));
+        Assert.False(source.IdMap.ContainsKey("a-sd"));
+    }
+
+    [Fact]
     public void Plan_RespectsMaxSources()
     {
         var entries = new[] { Entry("A.ru", null) };

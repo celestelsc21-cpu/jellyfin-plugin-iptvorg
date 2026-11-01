@@ -50,6 +50,9 @@ internal static class GuideSourcePlanner
         // url → (guide channel id → playlist tvg-ids)
         var plans = new Dictionary<string, (Uri Url, bool IsGzip, Dictionary<string, HashSet<string>> Map)>(StringComparer.Ordinal);
 
+        var covered = new HashSet<string>(StringComparer.Ordinal);
+
+        // Pass 1: guides for the same feed, or channel-wide guides.
         foreach (var guide in guides)
         {
             if (string.IsNullOrEmpty(guide.Channel)
@@ -58,34 +61,39 @@ internal static class GuideSourcePlanner
                 continue;
             }
 
-            // A feed-specific guide only serves the same feed; a channel-wide guide serves all feeds.
             var targets = channelEntries
                 .Where(e => guide.Feed is null || e.FeedId is null || string.Equals(e.FeedId, guide.Feed, StringComparison.Ordinal))
                 .Select(e => e.TvgId!)
                 .ToArray();
-            if (targets.Length == 0)
+            if (targets.Length > 0 && AddGuide(plans, guide, targets))
+            {
+                covered.UnionWith(targets);
+            }
+        }
+
+        // Pass 2: a channel variant without its own guide (for example "HD" when only "SD" is
+        // listed) borrows the guide of another variant of the same channel: the programme is the
+        // same. Time-shifted variants (+2, HD +4) never lend or borrow, their times differ.
+        foreach (var guide in guides)
+        {
+            if (string.IsNullOrEmpty(guide.Channel)
+                || guide.Feed is null
+                || PlaylistBuilder.IsTimeshift(guide.Feed, null)
+                || !byChannel.TryGetValue(guide.Channel, out var channelEntries))
             {
                 continue;
             }
 
-            // Guide files may label the channel with or without the feed suffix.
-            string[] sourceIds = guide.Feed is null
-                ? [guide.Channel]
-                : [guide.Channel + "@" + guide.Feed, guide.Channel];
-
-            // 1) Hosted files produced by iptv-org grabber servers: channels are labelled with iptv-org ids.
-            foreach (var source in guide.Sources ?? [])
+            var targets = channelEntries
+                .Where(e => e.FeedId is not null
+                    && !string.Equals(e.FeedId, guide.Feed, StringComparison.Ordinal)
+                    && !PlaylistBuilder.IsTimeshift(e.FeedId, null)
+                    && !covered.Contains(e.TvgId!))
+                .Select(e => e.TvgId!)
+                .ToArray();
+            if (targets.Length > 0 && AddGuide(plans, guide, targets))
             {
-                if (TryGetUrl(source, out var url, out var isGzip))
-                {
-                    AddTargets(plans, url, isGzip, sourceIds, targets);
-                }
-            }
-
-            // 2) Sites whose own XMLTV file the plugin reads directly: channels are labelled with site_id.
-            if (!string.IsNullOrEmpty(guide.SiteId) && SiteGuideFiles.TryGet(guide.Site, out var siteUrl) && siteUrl is not null)
-            {
-                AddTargets(plans, siteUrl, siteUrl.AbsolutePath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase), [guide.SiteId], targets);
+                covered.UnionWith(targets);
             }
         }
 
@@ -101,6 +109,45 @@ internal static class GuideSourcePlanner
             .ThenBy(s => s.Url.AbsoluteUri, StringComparer.Ordinal)
             .Take(Math.Max(0, maxSources))
             .ToArray();
+    }
+
+    /// <summary>
+    /// Adds every usable file of one guide entry to the plan.
+    /// </summary>
+    /// <param name="plans">Plans by file URL.</param>
+    /// <param name="guide">Guide entry.</param>
+    /// <param name="targets">Playlist <c>tvg-id</c> values the entry fills.</param>
+    /// <returns><c>true</c> when at least one file was usable.</returns>
+    private static bool AddGuide(
+        Dictionary<string, (Uri Url, bool IsGzip, Dictionary<string, HashSet<string>> Map)> plans,
+        ApiGuide guide,
+        IReadOnlyList<string> targets)
+    {
+        var added = false;
+
+        // Guide files may label the channel with or without the feed suffix.
+        string[] sourceIds = guide.Feed is null
+            ? [guide.Channel!]
+            : [guide.Channel + "@" + guide.Feed, guide.Channel!];
+
+        // 1) Hosted files produced by iptv-org grabber servers: channels are labelled with iptv-org ids.
+        foreach (var source in guide.Sources ?? [])
+        {
+            if (TryGetUrl(source, out var url, out var isGzip))
+            {
+                AddTargets(plans, url, isGzip, sourceIds, targets);
+                added = true;
+            }
+        }
+
+        // 2) Sites whose own XMLTV file the plugin reads directly: channels are labelled with site_id.
+        if (!string.IsNullOrEmpty(guide.SiteId) && SiteGuideFiles.TryGet(guide.Site, out var siteUrl) && siteUrl is not null)
+        {
+            AddTargets(plans, siteUrl, siteUrl.AbsolutePath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase), [guide.SiteId], targets);
+            added = true;
+        }
+
+        return added;
     }
 
     private static void AddTargets(
