@@ -343,9 +343,12 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
             Languages = []
         };
         catalog = null;
-        progress.Report(5);
 
+        // The settings page lists countries and languages from this file; write it before the
+        // (possibly long) stream checks so the lists appear right after the catalog download.
         Directory.CreateDirectory(_paths.DataDirectory);
+        await WriteFileAtomicallyAsync(_paths.FiltersPath, JsonSerializer.Serialize(filters), cancellationToken).ConfigureAwait(false);
+        progress.Report(5);
 
         IReadOnlySet<string>? dead = null;
         var check = new StreamCheckSummary(0, 0, 0);
@@ -369,7 +372,6 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
         }
 
         await WriteFileAtomicallyAsync(_paths.EntriesPath, JsonSerializer.Serialize(entries), cancellationToken).ConfigureAwait(false);
-        await WriteFileAtomicallyAsync(_paths.FiltersPath, JsonSerializer.Serialize(filters), cancellationToken).ConfigureAwait(false);
 
         UpdateStatus(s =>
         {

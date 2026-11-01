@@ -220,7 +220,7 @@
                             + '<input is="emby-checkbox" type="checkbox" class="iptvOrgFilter" data-kind="' + kind + '" data-code="' + escapeHtml(i.option.Code) + '"' + (i.selected ? ' checked' : '') + ' />'
                             + '<span class="' + (i.selected ? 'iptvOrgSelected' : '') + '">' + escapeHtml(label) + ' <span class="fieldDescription">(' + escapeHtml(i.option.ChannelCount) + ')</span></span>'
                             + '</label>';
-                    }).join('') || '<div class="fieldDescription">Список появится после первой сборки плейлиста.</div>';
+                    }).join('') || '<div class="fieldDescription">Список появится после загрузки каталога (задача «Обновить каналы IPTV-org» или кнопка «Обновить каналы сейчас» выше).</div>';
                 }
 
                 function applySearch(input, containers) {

@@ -1,6 +1,6 @@
 name: "IPTV-org"
 guid: "dade11c8-fc82-4cf1-9467-d0f1bc76f3fb"
-version: "0.2.0.0"
+version: "0.2.1.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Live TV channels from iptv-org with category filters and a program guide"
@@ -14,6 +14,8 @@ owner: "celesta"
 artifacts:
   - "Jellyfin.Plugin.IptvOrg.dll"
 changelog: |
+  0.2.1.0 - Country, region and language lists appear right after the catalog download,
+  before the stream check finishes.
   0.2.0.0 - Stream check: every playlist channel is probed (playlist request only); a dead
   stream is replaced by another stream of the same channel, channels without a working
   stream are left out; results cached (working 20 h, dead 3 days). Country, region and
