@@ -109,17 +109,17 @@ public class IptvOrgController : ControllerBase
     }
 
     /// <summary>
-    /// Clears the guide caches and queues a fresh guide update.
+    /// Clears the guide caches. Nothing is rebuilt: the guide stays empty until the next
+    /// guide update (scheduled or started manually).
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <response code="204">Cleared; the guide update is queued.</response>
+    /// <response code="204">Cleared.</response>
     /// <returns>No content.</returns>
     [HttpPost("Guide/Clear")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> ClearGuideCache(CancellationToken cancellationToken)
     {
         await _service.ClearGuideCacheAsync(cancellationToken).ConfigureAwait(false);
-        _taskManager.QueueScheduledTask<UpdateGuideTask>();
         return NoContent();
     }
 

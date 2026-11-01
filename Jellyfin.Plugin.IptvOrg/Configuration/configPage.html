@@ -24,7 +24,7 @@
                         <button is="emby-button" type="button" id="IptvOrgRegister" class="raised emby-button"><span>Подключить к Live TV</span></button>
                     </div>
                     <div class="fieldDescription">
-                        «Очистить кэш телегида» удаляет собранный гид, скачанные файлы гида и копию гида в кэше Jellyfin и собирает гид заново.
+                        «Очистить кэш телегида» удаляет собранный гид, скачанные файлы гида и копию гида в кэше Jellyfin; заново гид не собирается до следующего обновления.
                         «Подключить к Live TV» добавляет тюнер M3U (плейлист плагина) и источник гида XMLTV (гид плагина), если их ещё нет.
                         Задачи плагина и расписание — в «Панель управления → Запланированные задачи → IPTV-org».
                     </div>
@@ -393,11 +393,11 @@
                 });
 
                 $('#IptvOrgClearGuide').addEventListener('click', function () {
-                    if (!window.confirm('Удалить собранный телегид, скачанные файлы гида и копию гида в кэше Jellyfin, затем собрать гид заново?')) {
+                    if (!window.confirm('Очистить кэш телегида?')) {
                         return;
                     }
 
-                    post('IptvOrg/Guide/Clear', 'Кэш телегида очищен, сборка гида поставлена в очередь. Программа появится после её завершения.');
+                    post('IptvOrg/Guide/Clear', 'Кэш телегида очищен.');
                 });
 
                 $('#IptvOrgRegister').addEventListener('click', function () {
