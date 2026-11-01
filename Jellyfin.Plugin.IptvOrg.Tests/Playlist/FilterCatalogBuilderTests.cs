@@ -30,7 +30,7 @@ public class FilterCatalogBuilderTests
 
         var filters = FilterCatalogBuilder.Build(catalog, includeNsfw: false);
 
-        var ru = filters.Countries.First();
+        var ru = filters.Countries[0];
         Assert.Equal("RU", ru.Code);
         Assert.Equal("Russia", ru.Name);
         Assert.Equal(2, ru.ChannelCount);
