@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>IPTV-org</title>
+</head>
+<body>
+    <div id="IptvOrgConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="IptvOrgConfigForm">
+
+                    <h2 class="sectionTitle">Состояние</h2>
+                    <div id="IptvOrgStatus" class="fieldDescription">Загрузка…</div>
+                    <div style="display:flex; flex-wrap:wrap; gap:.5em; margin:1em 0;">
+                        <button is="emby-button" type="button" id="IptvOrgSyncNow" class="raised emby-button"><span>Обновить каналы сейчас</span></button>
+                        <button is="emby-button" type="button" id="IptvOrgGuideNow" class="raised emby-button"><span>Обновить телегид сейчас</span></button>
+                        <button is="emby-button" type="button" id="IptvOrgRegister" class="raised emby-button"><span>Подключить к Live TV</span></button>
+                    </div>
+                    <div class="fieldDescription">
+                        «Подключить к Live TV» добавляет тюнер M3U (плейлист плагина) и источник гида XMLTV (гид плагина), если их ещё нет.
+                        Задачи плагина и расписание — в «Панель управления → Запланированные задачи → IPTV-org».
+                    </div>
+
+                    <h2 class="sectionTitle">Категории</h2>
+                    <div class="fieldDescription">
+                        Отметьте категории, которые попадут в плейлист. Если отмечены все или ни одной — берутся все категории,
+                        включая новые, которые появятся в iptv-org. Канал с несколькими категориями попадает в первую отмеченную.
+                    </div>
+                    <div style="display:flex; gap:.5em; margin:.75em 0;">
+                        <button is="emby-button" type="button" id="IptvOrgSelectAll" class="emby-button"><span>Выбрать все</span></button>
+                        <button is="emby-button" type="button" id="IptvOrgSelectNone" class="emby-button"><span>Снять все</span></button>
+                    </div>
+                    <div id="IptvOrgCategories" class="checkboxList"></div>
+
+                    <h2 class="sectionTitle">Потоки</h2>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgSkipHeaders" />
+                            <span>Пропускать потоки, которым нужны особые заголовки (Referer / User-Agent)</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Тюнер M3U в Jellyfin не умеет передавать такие заголовки для отдельного канала — эти потоки обычно не работают.</div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgSkipGeo" />
+                            <span>Пропускать потоки с пометкой «Geo-blocked»</span>
+                        </label>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgSkipNot247" />
+                            <span>Пропускать каналы, вещающие не круглосуточно</span>
+                        </label>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgPrefix" />
+                            <span>Добавлять категорию к названию канала: «[Новости] Euronews»</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Jellyfin не группирует каналы Live TV по категориям. Каналы и так нумеруются блоками по категориям; префикс делает категорию видимой в названии.</div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgNsfw" />
+                            <span>Включать каналы для взрослых (18+)</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">По умолчанию выключено. Ограничение доступа по пользователям появится в следующем этапе.</div>
+                    </div>
+
+                    <h2 class="sectionTitle">Телегид</h2>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgEnableGuide" />
+                            <span>Собирать телегид из источников iptv-org</span>
+                        </label>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="IptvOrgMaxGuideSources">Максимум файлов гида за обновление</label>
+                        <input id="IptvOrgMaxGuideSources" type="number" is="emby-input" min="1" max="50" step="1" required />
+                        <div class="fieldDescription">Файлы скачиваются по очереди: сначала те, что покрывают больше ваших каналов; следующие заполняют каналы без программы. Меньше — легче для сервера и сети.</div>
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>Сохранить</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            (function () {
+                var pluginId = 'dade11c8-fc82-4cf1-9467-d0f1bc76f3fb';
+                var page = document.querySelector('#IptvOrgConfigPage');
+                var adultId = 'xxx';
+
+                function $(selector) {
+                    return page.querySelector(selector);
+                }
+
+                function escapeHtml(value) {
+                    return String(value === null || value === undefined ? '' : value)
+                        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                }
+
+                function formatDate(value) {
+                    return value ? new Date(value).toLocaleString('ru-RU') : 'ещё не выполнялось';
+                }
+
+                function yesNo(value) {
+                    return value ? '✅ подключён' : '❌ не подключён';
+                }
+
+                function renderStatus(response) {
+                    var s = response.Status || {};
+                    var lines = [
+                        '<b>Каталог iptv-org:</b> ' + escapeHtml(response.HasCatalog ? formatDate(s.LastSyncUtc) : 'ещё не скачан (первая загрузка начнётся автоматически через пару минут после запуска)'),
+                        '<b>Каналов в плейлисте:</b> ' + escapeHtml(s.ChannelCount || 0) + ' (собран: ' + escapeHtml(formatDate(s.LastPlaylistUtc)) + ')',
+                        '<b>Телегид:</b> ' + escapeHtml(s.LastGuideUtc
+                            ? (s.GuideChannelCount + ' каналов с программой, ' + s.GuideProgrammeCount + ' передач; файлов прочитано ' + s.GuideSourcesUsed + ', с ошибкой ' + s.GuideSourcesFailed + ' (' + formatDate(s.LastGuideUtc) + ')')
+                            : 'ещё не собирался'),
+                        '<b>Тюнер Live TV:</b> ' + escapeHtml(yesNo(response.TunerRegistered)) + ' · <b>гид Live TV:</b> ' + escapeHtml(yesNo(response.GuideRegistered)),
+                        '<b>Плейлист:</b> <code>' + escapeHtml(response.PlaylistPath) + '</code>',
+                        '<b>Гид:</b> <code>' + escapeHtml(response.GuidePath) + '</code>'
+                    ];
+                    if (s.LastError) {
+                        lines.push('<b style="color:#e57373">Последняя ошибка:</b> ' + escapeHtml(s.LastError));
+                    }
+
+                    $('#IptvOrgStatus').innerHTML = lines.join('<br>');
+                }
+
+                function renderCategories(categories, selected, includeNsfw) {
+                    var all = !selected || selected.length === 0;
+                    var html = categories.map(function (c) {
+                        var isAdult = c.IsAdult;
+                        var checked = isAdult ? (includeNsfw && (all || selected.indexOf(c.Id) !== -1)) : (all || selected.indexOf(c.Id) !== -1);
+                        return '<label class="checkboxContainer" style="display:block; margin:.25em 0;">'
+                            + '<input is="emby-checkbox" type="checkbox" class="iptvOrgCategory" data-id="' + escapeHtml(c.Id) + '"'
+                            + (isAdult ? ' data-adult="1"' : '')
+                            + (checked ? ' checked' : '')
+                            + (isAdult && !includeNsfw ? ' disabled' : '') + ' />'
+                            + '<span>' + escapeHtml(c.Name) + ' <span class="fieldDescription">(' + escapeHtml(c.ChannelCount) + ')</span></span>'
+                            + '</label>';
+                    }).join('');
+
+                    $('#IptvOrgCategories').innerHTML = html || '<div class="fieldDescription">Категории появятся после первой загрузки каталога.</div>';
+                }
+
+                function categoryBoxes() {
+                    return Array.prototype.slice.call(page.querySelectorAll('.iptvOrgCategory'));
+                }
+
+                function collectCategories() {
+                    var boxes = categoryBoxes();
+                    var regular = boxes.filter(function (b) { return !b.getAttribute('data-adult'); });
+                    var checked = boxes.filter(function (b) { return b.checked && !b.disabled; });
+                    var allRegularChecked = regular.length > 0 && regular.every(function (b) { return b.checked; });
+                    var adultChecked = boxes.some(function (b) { return b.getAttribute('data-adult') && b.checked && !b.disabled; });
+
+                    // All (or none) selected means "everything", including categories added later.
+                    if (checked.length === 0 || (allRegularChecked && (adultChecked || !$('#IptvOrgNsfw').checked))) {
+                        return [];
+                    }
+
+                    return checked.map(function (b) { return b.getAttribute('data-id'); });
+                }
+
+                function load() {
+                    Dashboard.showLoadingMsg();
+                    Promise.all([
+                        ApiClient.getPluginConfiguration(pluginId),
+                        ApiClient.getJSON(ApiClient.getUrl('IptvOrg/Categories')),
+                        ApiClient.getJSON(ApiClient.getUrl('IptvOrg/Status'))
+                    ]).then(function (results) {
+                        var config = results[0];
+                        $('#IptvOrgSkipHeaders').checked = !!config.SkipStreamsWithCustomHeaders;
+                        $('#IptvOrgSkipGeo').checked = !!config.SkipGeoBlocked;
+                        $('#IptvOrgSkipNot247').checked = !!config.SkipNot247;
+                        $('#IptvOrgPrefix').checked = !!config.PrefixCategoryInName;
+                        $('#IptvOrgNsfw').checked = !!config.IncludeNsfw;
+                        $('#IptvOrgEnableGuide').checked = !!config.EnableGuide;
+                        $('#IptvOrgMaxGuideSources').value = config.MaxGuideSources;
+                        renderCategories(results[1] || [], config.Categories || [], !!config.IncludeNsfw);
+                        renderStatus(results[2]);
+                        Dashboard.hideLoadingMsg();
+                    }, function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Не удалось загрузить настройки IPTV-org.');
+                    });
+                }
+
+                function refreshStatus() {
+                    ApiClient.getJSON(ApiClient.getUrl('IptvOrg/Status')).then(renderStatus);
+                }
+
+                function post(endpoint, message) {
+                    Dashboard.showLoadingMsg();
+                    return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl(endpoint) }).then(function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert(message);
+                        refreshStatus();
+                    }, function (response) {
+                        Dashboard.hideLoadingMsg();
+                        if (response && response.status === 409 && response.text) {
+                            response.text().then(function (text) { Dashboard.alert(text.replace(/^"|"$/g, '')); });
+                        } else {
+                            Dashboard.alert('Операция не выполнена. Подробности — в журнале сервера.');
+                        }
+                    });
+                }
+
+                page.addEventListener('pageshow', load);
+
+                $('#IptvOrgNsfw').addEventListener('change', function () {
+                    var enabled = this.checked;
+                    categoryBoxes().forEach(function (b) {
+                        if (b.getAttribute('data-adult')) {
+                            b.disabled = !enabled;
+                            if (!enabled) {
+                                b.checked = false;
+                            }
+                        }
+                    });
+                });
+
+                $('#IptvOrgSelectAll').addEventListener('click', function () {
+                    categoryBoxes().forEach(function (b) { if (!b.disabled) { b.checked = true; } });
+                });
+
+                $('#IptvOrgSelectNone').addEventListener('click', function () {
+                    categoryBoxes().forEach(function (b) { b.checked = false; });
+                });
+
+                $('#IptvOrgSyncNow').addEventListener('click', function () {
+                    post('IptvOrg/Sync', 'Загрузка каталога поставлена в очередь. Ход выполнения — в «Запланированных задачах».');
+                });
+
+                $('#IptvOrgGuideNow').addEventListener('click', function () {
+                    post('IptvOrg/Guide', 'Обновление телегида поставлено в очередь.');
+                });
+
+                $('#IptvOrgRegister').addEventListener('click', function () {
+                    post('IptvOrg/LiveTv', 'Тюнер и гид IPTV-org подключены к Live TV. Jellyfin обновит список каналов в фоне.');
+                });
+
+                $('#IptvOrgConfigForm').addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        config.Categories = collectCategories();
+                        config.SkipStreamsWithCustomHeaders = $('#IptvOrgSkipHeaders').checked;
+                        config.SkipGeoBlocked = $('#IptvOrgSkipGeo').checked;
+                        config.SkipNot247 = $('#IptvOrgSkipNot247').checked;
+                        config.PrefixCategoryInName = $('#IptvOrgPrefix').checked;
+                        config.IncludeNsfw = $('#IptvOrgNsfw').checked;
+                        config.EnableGuide = $('#IptvOrgEnableGuide').checked;
+                        config.MaxGuideSources = parseInt($('#IptvOrgMaxGuideSources').value, 10) || 10;
+                        return ApiClient.updatePluginConfiguration(pluginId, config);
+                    }).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                        setTimeout(refreshStatus, 5000);
+                    }, function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Не удалось сохранить настройки.');
+                    });
+                    return false;
+                });
+            })();
+        </script>
+    </div>
+</body>
+</html>

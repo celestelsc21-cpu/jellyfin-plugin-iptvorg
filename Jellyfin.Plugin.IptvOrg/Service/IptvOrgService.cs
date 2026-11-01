@@ -1,0 +1,547 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Xml;
+using Jellyfin.Plugin.IptvOrg.Catalog;
+using Jellyfin.Plugin.IptvOrg.Configuration;
+using Jellyfin.Plugin.IptvOrg.Guide;
+using Jellyfin.Plugin.IptvOrg.Playlist;
+using MediaBrowser.Common.Configuration;
+using MediaBrowser.Controller.LiveTv;
+using MediaBrowser.Model.LiveTv;
+using MediaBrowser.Model.Tasks;
+using Microsoft.Extensions.Logging;
+
+namespace Jellyfin.Plugin.IptvOrg.Service;
+
+/// <summary>
+/// Default <see cref="IIptvOrgService"/> implementation.
+/// </summary>
+internal sealed class IptvOrgService : IIptvOrgService, IDisposable
+{
+    /// <summary>
+    /// Largest guide file accepted (compressed size), to protect disk and network.
+    /// </summary>
+    internal const long MaxGuideFileBytes = 300L * 1024 * 1024;
+
+    private const string LiveTvConfigurationKey = "livetv";
+
+    private static readonly JsonSerializerOptions StatusJsonOptions = new() { WriteIndented = true };
+    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+
+    private readonly IIptvOrgClient _client;
+    private readonly IPluginConfigurationAccessor _config;
+    private readonly PluginPaths _paths;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ITaskManager _taskManager;
+    private readonly ITunerHostManager _tunerHostManager;
+    private readonly IListingsManager _listingsManager;
+    private readonly IConfigurationManager _configurationManager;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger<IptvOrgService> _logger;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly Lock _statusLock = new();
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="IptvOrgService"/> class.
+    /// </summary>
+    /// <param name="client">iptv-org API client.</param>
+    /// <param name="config">Configuration accessor.</param>
+    /// <param name="paths">Plugin paths.</param>
+    /// <param name="httpClientFactory">HTTP client factory.</param>
+    /// <param name="taskManager">Task manager.</param>
+    /// <param name="tunerHostManager">Tuner host manager.</param>
+    /// <param name="listingsManager">Listings manager.</param>
+    /// <param name="configurationManager">Server configuration manager.</param>
+    /// <param name="timeProvider">Time provider.</param>
+    /// <param name="logger">Logger.</param>
+    public IptvOrgService(
+        IIptvOrgClient client,
+        IPluginConfigurationAccessor config,
+        PluginPaths paths,
+        IHttpClientFactory httpClientFactory,
+        ITaskManager taskManager,
+        ITunerHostManager tunerHostManager,
+        IListingsManager listingsManager,
+        IConfigurationManager configurationManager,
+        TimeProvider timeProvider,
+        ILogger<IptvOrgService> logger)
+    {
+        _client = client;
+        _config = config;
+        _paths = paths;
+        _httpClientFactory = httpClientFactory;
+        _taskManager = taskManager;
+        _tunerHostManager = tunerHostManager;
+        _listingsManager = listingsManager;
+        _configurationManager = configurationManager;
+        _timeProvider = timeProvider;
+        _logger = logger;
+    }
+
+    /// <inheritdoc />
+    public string PlaylistPath => _paths.PlaylistPath;
+
+    /// <inheritdoc />
+    public string GuidePath => _paths.GuidePath;
+
+    /// <inheritdoc />
+    public bool HasCatalog => CatalogLoader.IsComplete(_paths.CacheDirectory);
+
+    /// <inheritdoc />
+    public async Task SyncAsync(IProgress<double> progress, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(progress);
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            progress.Report(0);
+            try
+            {
+                await _client.DownloadAllAsync(_paths.CacheDirectory, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException)
+            {
+                UpdateStatus(s => s.LastError = "Не удалось скачать каталог iptv-org: " + ex.Message);
+                throw;
+            }
+
+            UpdateStatus(s =>
+            {
+                s.LastSyncUtc = _timeProvider.GetUtcNow().UtcDateTime;
+                s.LastError = null;
+            });
+            progress.Report(70);
+
+            await RebuildPlaylistCoreAsync(cancellationToken).ConfigureAwait(false);
+            progress.Report(100);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task RebuildPlaylistAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await RebuildPlaylistCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task UpdateGuideAsync(IProgress<double> progress, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(progress);
+
+        var config = _config.Current;
+        if (!config.EnableGuide)
+        {
+            _logger.LogInformation("IPTV-org guide is disabled in the plugin settings");
+            return;
+        }
+
+        if (!HasCatalog)
+        {
+            _logger.LogInformation("IPTV-org catalog is not downloaded yet; skipping the guide update");
+            return;
+        }
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await UpdateGuideCoreAsync(config, progress, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<LiveTvRegistration> RegisterInLiveTvAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!File.Exists(_paths.PlaylistPath))
+            {
+                throw new InvalidOperationException("Плейлист ещё не создан: сначала обновите каталог iptv-org.");
+            }
+
+            if (!File.Exists(_paths.GuidePath))
+            {
+                // The XMLTV provider requires an existing file; the guide task fills it later.
+                await WriteEmptyGuideAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var current = GetRegistration();
+            var tunerId = current.TunerId;
+            if (tunerId is null)
+            {
+                var tuner = await _tunerHostManager.SaveTunerHost(new TunerHostInfo
+                {
+                    Type = IptvOrgConstants.M3uTunerType,
+                    Url = _paths.PlaylistPath,
+                    FriendlyName = IptvOrgConstants.TunerFriendlyName,
+                    ImportFavoritesOnly = false,
+                    TunerCount = 0
+                }).ConfigureAwait(false);
+                tunerId = tuner.Id;
+                _logger.LogInformation("Registered the IPTV-org M3U tuner in Live TV");
+            }
+
+            var listingsId = current.ListingsProviderId;
+            if (listingsId is null)
+            {
+                var listings = await _listingsManager.SaveListingProvider(
+                    new ListingsProviderInfo
+                    {
+                        Type = IptvOrgConstants.XmlTvListingsType,
+                        Path = _paths.GuidePath,
+                        EnableAllTuners = false,
+                        EnabledTuners = [tunerId]
+                    },
+                    validateLogin: false,
+                    validateListings: true).ConfigureAwait(false);
+                listingsId = listings.Id;
+                _logger.LogInformation("Registered the IPTV-org XMLTV guide in Live TV");
+            }
+
+            return new LiveTvRegistration(tunerId, listingsId);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public LiveTvRegistration GetRegistration()
+    {
+        var options = _configurationManager.GetConfiguration<LiveTvOptions>(LiveTvConfigurationKey);
+
+        var tuner = options.TunerHosts?.FirstOrDefault(t =>
+            string.Equals(t.Type, IptvOrgConstants.M3uTunerType, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(t.Url, _paths.PlaylistPath, StringComparison.Ordinal));
+        var listings = options.ListingProviders?.FirstOrDefault(l =>
+            string.Equals(l.Type, IptvOrgConstants.XmlTvListingsType, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(l.Path, _paths.GuidePath, StringComparison.Ordinal));
+
+        return new LiveTvRegistration(tuner?.Id, listings?.Id);
+    }
+
+    /// <inheritdoc />
+    public PluginStatus GetStatus()
+    {
+        lock (_statusLock)
+        {
+            return ReadStatus();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CategoryInfo>> GetCategoriesAsync(CancellationToken cancellationToken)
+    {
+        var categories = await CatalogLoader.LoadCategoriesAsync(_paths.CacheDirectory, cancellationToken).ConfigureAwait(false);
+        var counts = GetStatus().CatalogCategoryCounts;
+
+        var result = categories
+            .Where(c => !string.IsNullOrEmpty(c.Id))
+            .Select(c => new CategoryInfo(
+                c.Id.ToLowerInvariant(),
+                CategoryNames.Get(c.Id, c.Name),
+                counts.GetValueOrDefault(c.Id),
+                string.Equals(c.Id, IptvOrgConstants.AdultCategory, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        result.Add(new CategoryInfo(
+            IptvOrgConstants.UndefinedCategory,
+            CategoryNames.Get(IptvOrgConstants.UndefinedCategory),
+            counts.GetValueOrDefault(IptvOrgConstants.UndefinedCategory),
+            false));
+
+        return result;
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        _gate.Dispose();
+    }
+
+    private async Task RebuildPlaylistCoreAsync(CancellationToken cancellationToken)
+    {
+        if (!HasCatalog)
+        {
+            _logger.LogInformation("IPTV-org catalog is not downloaded yet; the playlist is not built");
+            return;
+        }
+
+        var config = _config.Current;
+        var catalog = await CatalogLoader.LoadAsync(_paths.CacheDirectory, cancellationToken).ConfigureAwait(false);
+        var entries = PlaylistBuilder.Build(catalog, ChannelFilterOptions.FromConfiguration(config));
+        var counts = PlaylistBuilder.CountByCategory(catalog, includeNsfw: true);
+        var content = M3uWriter.Write(entries);
+
+        Directory.CreateDirectory(_paths.DataDirectory);
+        var changed = !File.Exists(_paths.PlaylistPath)
+            || !string.Equals(
+                await File.ReadAllTextAsync(_paths.PlaylistPath, cancellationToken).ConfigureAwait(false),
+                content,
+                StringComparison.Ordinal);
+
+        if (changed)
+        {
+            var tempPath = _paths.PlaylistPath + ".tmp";
+            await File.WriteAllTextAsync(tempPath, content, Utf8NoBom, cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, _paths.PlaylistPath, overwrite: true);
+        }
+
+        UpdateStatus(s =>
+        {
+            s.LastPlaylistUtc = _timeProvider.GetUtcNow().UtcDateTime;
+            s.ChannelCount = entries.Count;
+            s.CatalogCategoryCounts = counts;
+        });
+
+        _logger.LogInformation(
+            "IPTV-org playlist built: {Count} channels ({State})",
+            entries.Count,
+            changed ? "updated" : "unchanged");
+
+        if (changed && GetRegistration().TunerId is not null)
+        {
+            QueueJellyfinGuideRefresh();
+        }
+    }
+
+    private async Task UpdateGuideCoreAsync(PluginConfiguration config, IProgress<double> progress, CancellationToken cancellationToken)
+    {
+        progress.Report(0);
+
+        // Planned in a separate method so the large catalog lists can be collected before the downloads.
+        var (entries, sources) = await PlanGuideAsync(config, cancellationToken).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "IPTV-org guide: {Sources} guide files planned for {Channels} channels",
+            sources.Count,
+            entries.Count);
+
+        Directory.CreateDirectory(_paths.DataDirectory);
+        Directory.CreateDirectory(_paths.GuideDownloadDirectory);
+
+        var tempGuidePath = _paths.GuidePath + ".tmp";
+        var used = 0;
+        var failed = 0;
+        int programmes;
+        int coveredChannels;
+
+        var output = new FileStream(tempGuidePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous);
+        await using (output.ConfigureAwait(false))
+        {
+            var writer = XmlWriter.Create(output, new XmlWriterSettings { Async = true, Encoding = Utf8NoBom, Indent = false });
+            await using (writer.ConfigureAwait(false))
+            {
+                var merger = new XmltvMerger(writer, entries, _timeProvider.GetUtcNow());
+                await merger.WriteHeaderAsync().ConfigureAwait(false);
+
+                for (var i = 0; i < sources.Count; i++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var source = sources[i];
+
+                    try
+                    {
+                        var copied = await AddGuideSourceAsync(merger, source, cancellationToken).ConfigureAwait(false);
+                        used++;
+                        _logger.LogInformation(
+                            "IPTV-org guide: {Host} gave {Programmes} programmes",
+                            source.Url.Host,
+                            copied);
+                    }
+                    catch (Exception ex) when (ex is HttpRequestException or IOException or XmlException or InvalidDataException
+                        || (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+                    {
+                        // One broken third-party host must not stop the others.
+                        failed++;
+                        _logger.LogWarning("IPTV-org guide: {Host} failed: {Reason}", source.Url.Host, ex.Message);
+                    }
+
+                    progress.Report(100.0 * (i + 1) / Math.Max(1, sources.Count));
+                }
+
+                await merger.WriteFooterAsync().ConfigureAwait(false);
+                programmes = merger.ProgrammeCount;
+                coveredChannels = merger.CoveredChannels.Count;
+            }
+        }
+
+        File.Move(tempGuidePath, _paths.GuidePath, overwrite: true);
+
+        UpdateStatus(s =>
+        {
+            s.LastGuideUtc = _timeProvider.GetUtcNow().UtcDateTime;
+            s.GuideChannelCount = coveredChannels;
+            s.GuideProgrammeCount = programmes;
+            s.GuideSourcesUsed = used;
+            s.GuideSourcesFailed = failed;
+        });
+
+        _logger.LogInformation(
+            "IPTV-org guide built: {Programmes} programmes for {Covered} of {Channels} channels ({Used} files read, {Failed} failed)",
+            programmes,
+            coveredChannels,
+            entries.Count,
+            used,
+            failed);
+
+        if (GetRegistration().ListingsProviderId is not null)
+        {
+            QueueJellyfinGuideRefresh();
+        }
+
+        progress.Report(100);
+    }
+
+    private async Task<(IReadOnlyList<PlaylistEntry> Entries, IReadOnlyList<GuideSource> Sources)> PlanGuideAsync(
+        PluginConfiguration config,
+        CancellationToken cancellationToken)
+    {
+        var catalog = await CatalogLoader.LoadAsync(_paths.CacheDirectory, cancellationToken).ConfigureAwait(false);
+        var entries = PlaylistBuilder.Build(catalog, ChannelFilterOptions.FromConfiguration(config));
+        var sources = GuideSourcePlanner.Plan(entries, catalog.Guides, config.MaxGuideSources);
+        return (entries, sources);
+    }
+
+    private async Task<int> AddGuideSourceAsync(XmltvMerger merger, GuideSource source, CancellationToken cancellationToken)
+    {
+        var tempPath = Path.Combine(_paths.GuideDownloadDirectory, Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture) + ".tmp");
+        try
+        {
+            var client = _httpClientFactory.CreateClient(IptvOrgConstants.GuideHttpClientName);
+            using (var response = await client.GetAsync(source.Url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
+            {
+                response.EnsureSuccessStatusCode();
+                if (response.Content.Headers.ContentLength > MaxGuideFileBytes)
+                {
+                    throw new InvalidDataException("The guide file is too large.");
+                }
+
+                var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                await using (input.ConfigureAwait(false))
+                {
+                    var file = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous);
+                    await using (file.ConfigureAwait(false))
+                    {
+                        await CopyWithLimitAsync(input, file, MaxGuideFileBytes, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+
+            var content = new FileStream(tempPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            await using (content.ConfigureAwait(false))
+            {
+                return await merger.AddSourceAsync(source, content, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
+    private static async Task CopyWithLimitAsync(Stream input, Stream output, long limit, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[81920];
+        long total = 0;
+        int read;
+        while ((read = await input.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            total += read;
+            if (total > limit)
+            {
+                throw new InvalidDataException("The guide file is too large.");
+            }
+
+            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task WriteEmptyGuideAsync(CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(_paths.DataDirectory);
+        var tempPath = _paths.GuidePath + ".tmp";
+        await File.WriteAllTextAsync(
+            tempPath,
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<tv generator-info-name=\"Jellyfin IPTV-org plugin\"></tv>\n",
+            Utf8NoBom,
+            cancellationToken).ConfigureAwait(false);
+        File.Move(tempPath, _paths.GuidePath, overwrite: true);
+    }
+
+    private void QueueJellyfinGuideRefresh()
+    {
+        var worker = _taskManager.ScheduledTasks.FirstOrDefault(t =>
+            string.Equals(t.ScheduledTask.Key, IptvOrgConstants.RefreshGuideTaskKey, StringComparison.Ordinal));
+        if (worker is null)
+        {
+            _logger.LogWarning("Jellyfin's guide refresh task was not found; refresh the guide manually");
+            return;
+        }
+
+        _taskManager.QueueScheduledTask(worker.ScheduledTask, new TaskOptions());
+    }
+
+    private void UpdateStatus(Action<PluginStatus> update)
+    {
+        lock (_statusLock)
+        {
+            var status = ReadStatus();
+            update(status);
+            try
+            {
+                Directory.CreateDirectory(_paths.DataDirectory);
+                var tempPath = _paths.StatusPath + ".tmp";
+                File.WriteAllText(tempPath, JsonSerializer.Serialize(status, StatusJsonOptions), Utf8NoBom);
+                File.Move(tempPath, _paths.StatusPath, overwrite: true);
+            }
+            catch (IOException ex)
+            {
+                _logger.LogWarning(ex, "Could not save the IPTV-org status");
+            }
+        }
+    }
+
+    private PluginStatus ReadStatus()
+    {
+        try
+        {
+            if (File.Exists(_paths.StatusPath))
+            {
+                return JsonSerializer.Deserialize<PluginStatus>(File.ReadAllText(_paths.StatusPath, Utf8NoBom)) ?? new PluginStatus();
+            }
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            _logger.LogWarning(ex, "Could not read the IPTV-org status; starting fresh");
+        }
+
+        return new PluginStatus();
+    }
+}

@@ -1,0 +1,20 @@
+name: "IPTV-org"
+guid: "dade11c8-fc82-4cf1-9467-d0f1bc76f3fb"
+version: "0.1.0.0"
+targetAbi: "10.11.0.0"
+framework: "net9.0"
+overview: "Live TV channels from iptv-org with category filters and a program guide"
+description: >
+  Builds a Live TV playlist from the iptv-org catalog (https://github.com/iptv-org/iptv),
+  filtered by category, and a program guide merged from the hosted guide files listed
+  by iptv-org. Both are plain local files used by Jellyfin's built-in M3U tuner and
+  XMLTV guide; one button adds them to Live TV.
+category: "LiveTV"
+owner: "celesta"
+artifacts:
+  - "Jellyfin.Plugin.IptvOrg.dll"
+changelog: |
+  0.1.0.0 - First release: daily iptv-org catalog download (JSON API), category filter
+  with Russian names, adult channels off by default, one stream per channel and feed,
+  channel numbers grouped by category, optional category prefix in names, program guide
+  merged from several hosted guide files with fallback, one-click Live TV registration.
