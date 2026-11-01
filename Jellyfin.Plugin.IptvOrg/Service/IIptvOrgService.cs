@@ -50,6 +50,14 @@ public interface IIptvOrgService
     Task UpdateGuideAsync(IProgress<double> progress, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Deletes the generated guide, downloaded guide files and Jellyfin's cached copy of the
+    /// guide. The guide is empty until the next guide update.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task.</returns>
+    Task ClearGuideCacheAsync(CancellationToken cancellationToken);
+
+    /// <summary>
     /// Adds the M3U tuner and the XMLTV guide source to Live TV, if missing.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>

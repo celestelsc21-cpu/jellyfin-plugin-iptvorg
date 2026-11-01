@@ -310,6 +310,57 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
     }
 
     /// <inheritdoc />
+    public async Task ClearGuideCacheAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var removed = 0;
+            if (Directory.Exists(_paths.GuideDownloadDirectory))
+            {
+                foreach (var file in Directory.EnumerateFiles(_paths.GuideDownloadDirectory))
+                {
+                    File.Delete(file);
+                    removed++;
+                }
+            }
+
+            if (File.Exists(_paths.GuidePath))
+            {
+                File.Delete(_paths.GuidePath);
+                removed++;
+            }
+
+            var listingsId = GetRegistration().ListingsProviderId;
+            if (listingsId is not null)
+            {
+                if (DeleteJellyfinGuideCopy(listingsId))
+                {
+                    removed++;
+                }
+
+                // The XMLTV provider needs an existing file until the guide is rebuilt.
+                await WriteEmptyGuideAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            UpdateStatus(s =>
+            {
+                s.LastGuideUtc = null;
+                s.GuideChannelCount = 0;
+                s.GuideProgrammeCount = 0;
+                s.GuideSourcesUsed = 0;
+                s.GuideSourcesFailed = 0;
+            });
+
+            _logger.LogInformation("IPTV-org guide cache cleared ({Count} files removed)", removed);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
     public void Dispose()
     {
         _gate.Dispose();
@@ -550,8 +601,11 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
             used,
             failed);
 
-        if (GetRegistration().ListingsProviderId is not null)
+        var listingsId = GetRegistration().ListingsProviderId;
+        if (listingsId is not null)
         {
+            // Without this Jellyfin keeps reading its own copy of the old guide for up to an hour.
+            DeleteJellyfinGuideCopy(listingsId);
             QueueJellyfinGuideRefresh();
         }
 
@@ -640,6 +694,38 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
             Utf8NoBom,
             cancellationToken).ConfigureAwait(false);
         File.Move(tempPath, _paths.GuidePath, overwrite: true);
+    }
+
+    private bool DeleteJellyfinGuideCopy(string listingsId)
+    {
+        // The id comes from Jellyfin's own configuration (a GUID in "N" format); refuse
+        // anything else so it can never point outside the cache directory.
+        if (listingsId.Length == 0 || !listingsId.All(char.IsAsciiHexDigit))
+        {
+            return false;
+        }
+
+        var path = Path.Combine(_paths.JellyfinXmlTvCacheDirectory, listingsId + ".xml");
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return false;
+            }
+
+            File.Delete(path);
+            return true;
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "Could not delete Jellyfin's cached copy of the IPTV-org guide");
+            return false;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "Could not delete Jellyfin's cached copy of the IPTV-org guide");
+            return false;
+        }
     }
 
     private void QueueJellyfinGuideRefresh()

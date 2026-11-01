@@ -109,6 +109,21 @@ public class IptvOrgController : ControllerBase
     }
 
     /// <summary>
+    /// Clears the guide caches and queues a fresh guide update.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="204">Cleared; the guide update is queued.</response>
+    /// <returns>No content.</returns>
+    [HttpPost("Guide/Clear")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<ActionResult> ClearGuideCache(CancellationToken cancellationToken)
+    {
+        await _service.ClearGuideCacheAsync(cancellationToken).ConfigureAwait(false);
+        _taskManager.QueueScheduledTask<UpdateGuideTask>();
+        return NoContent();
+    }
+
+    /// <summary>
     /// Adds the plugin's M3U tuner and XMLTV guide to Live TV, if missing.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>

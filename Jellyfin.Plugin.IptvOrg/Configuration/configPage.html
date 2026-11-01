@@ -20,9 +20,11 @@
                     <div style="display:flex; flex-wrap:wrap; gap:.5em; margin:1em 0;">
                         <button is="emby-button" type="button" id="IptvOrgSyncNow" class="raised emby-button"><span>Обновить каналы сейчас</span></button>
                         <button is="emby-button" type="button" id="IptvOrgGuideNow" class="raised emby-button"><span>Обновить телегид сейчас</span></button>
+                        <button is="emby-button" type="button" id="IptvOrgClearGuide" class="raised emby-button"><span>Очистить кэш телегида</span></button>
                         <button is="emby-button" type="button" id="IptvOrgRegister" class="raised emby-button"><span>Подключить к Live TV</span></button>
                     </div>
                     <div class="fieldDescription">
+                        «Очистить кэш телегида» удаляет собранный гид, скачанные файлы гида и копию гида в кэше Jellyfin и собирает гид заново.
                         «Подключить к Live TV» добавляет тюнер M3U (плейлист плагина) и источник гида XMLTV (гид плагина), если их ещё нет.
                         Задачи плагина и расписание — в «Панель управления → Запланированные задачи → IPTV-org».
                     </div>
@@ -388,6 +390,14 @@
 
                 $('#IptvOrgGuideNow').addEventListener('click', function () {
                     post('IptvOrg/Guide', 'Обновление телегида поставлено в очередь.');
+                });
+
+                $('#IptvOrgClearGuide').addEventListener('click', function () {
+                    if (!window.confirm('Удалить собранный телегид, скачанные файлы гида и копию гида в кэше Jellyfin, затем собрать гид заново?')) {
+                        return;
+                    }
+
+                    post('IptvOrg/Guide/Clear', 'Кэш телегида очищен, сборка гида поставлена в очередь. Программа появится после её завершения.');
                 });
 
                 $('#IptvOrgRegister').addEventListener('click', function () {

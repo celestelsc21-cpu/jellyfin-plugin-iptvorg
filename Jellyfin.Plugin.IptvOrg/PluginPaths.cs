@@ -21,6 +21,11 @@ internal sealed class PluginPaths
         GuidePath = Path.Combine(DataDirectory, IptvOrgConstants.GuideFileName);
         StatusPath = Path.Combine(DataDirectory, IptvOrgConstants.StatusFileName);
         GuideDownloadDirectory = Path.Combine(CacheDirectory, "guides");
+
+        // Where Jellyfin's XMLTV provider keeps its copy of a guide (<cache>/xmltv/<provider id>.xml,
+        // see XmlTvListingsProvider in Jellyfin 10.11). Not a public API: if Jellyfin moves it,
+        // clearing simply finds nothing and Jellyfin re-reads the guide after its 1-hour cache.
+        JellyfinXmlTvCacheDirectory = Path.Combine(applicationPaths.CachePath, "xmltv");
         EntriesPath = Path.Combine(DataDirectory, IptvOrgConstants.EntriesFileName);
         FiltersPath = Path.Combine(DataDirectory, IptvOrgConstants.FiltersFileName);
         StreamCheckPath = Path.Combine(DataDirectory, IptvOrgConstants.StreamCheckFileName);
@@ -49,6 +54,9 @@ internal sealed class PluginPaths
 
     /// <summary>Gets the stream check cache path.</summary>
     public string StreamCheckPath { get; }
+
+    /// <summary>Gets Jellyfin's XMLTV cache directory.</summary>
+    public string JellyfinXmlTvCacheDirectory { get; }
 
     /// <summary>Gets the temporary directory for guide downloads.</summary>
     public string GuideDownloadDirectory { get; }
