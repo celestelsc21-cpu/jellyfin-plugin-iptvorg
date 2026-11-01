@@ -427,6 +427,7 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
         {
             entries = ChannelNames.Apply(entries, await LoadRussianNamesAsync(cancellationToken).ConfigureAwait(false), config.PrefixCategoryInName);
         }
+
         var content = M3uWriter.Write(entries);
 
         var changed = !File.Exists(_paths.PlaylistPath)
