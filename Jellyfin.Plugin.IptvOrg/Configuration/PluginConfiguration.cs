@@ -22,6 +22,11 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public const int MaxGuideSourcesLimit = 50;
 
+    /// <summary>
+    /// Upper bound for <see cref="StreamCheckConcurrency"/>.
+    /// </summary>
+    public const int MaxStreamCheckConcurrency = 16;
+
     private const int MaxFilterValues = 500;
     private const int MaxCodeLength = 64;
 
@@ -38,19 +43,17 @@ public class PluginConfiguration : BasePluginConfiguration
 
     /// <summary>
     /// Gets or sets the ISO 639-3 language codes (for example <c>rus</c>). Empty means all.
-    /// Not exposed in the settings page yet.
     /// </summary>
     public string[] Languages { get; set; } = [];
 
     /// <summary>
     /// Gets or sets the ISO 3166-1 alpha-2 country codes (for example <c>RU</c>). Empty means all.
-    /// Countries and regions form one geographic filter. Not exposed in the settings page yet.
+    /// Countries and regions form one geographic filter (a channel matches either).
     /// </summary>
     public string[] Countries { get; set; } = [];
 
     /// <summary>
     /// Gets or sets the iptv-org region codes (for example <c>CIS</c>). Empty means all.
-    /// Not exposed in the settings page yet.
     /// </summary>
     public string[] Regions { get; set; } = [];
 
@@ -82,6 +85,35 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool PrefixCategoryInName { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether time-shifted versions of a channel
+    /// (feeds such as <c>+2</c> or <c>HD +4</c>) are left out.
+    /// </summary>
+    public bool HideTimeshiftFeeds { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a channel appears once even when it has
+    /// several feeds (HD/SD, regional): the best working stream is used.
+    /// When off, every feed is a separate channel.
+    /// </summary>
+    public bool OneStreamPerChannel { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether streams are probed before they enter the
+    /// playlist; dead streams are replaced by another stream of the same channel or dropped.
+    /// </summary>
+    public bool CheckStreams { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the number of simultaneous stream checks.
+    /// </summary>
+    public int StreamCheckConcurrency { get; set; } = 4;
+
+    /// <summary>
+    /// Gets or sets the stream check timeout in seconds.
+    /// </summary>
+    public int StreamCheckTimeoutSeconds { get; set; } = 8;
+
+    /// <summary>
     /// Gets or sets a value indicating whether the plugin builds the program guide
     /// from the hosted guide files listed by iptv-org.
     /// </summary>
@@ -105,6 +137,8 @@ public class PluginConfiguration : BasePluginConfiguration
         Regions = Clean(Regions, toUpper: true);
 
         MaxGuideSources = Math.Clamp(MaxGuideSources, 1, MaxGuideSourcesLimit);
+        StreamCheckConcurrency = Math.Clamp(StreamCheckConcurrency, 1, MaxStreamCheckConcurrency);
+        StreamCheckTimeoutSeconds = Math.Clamp(StreamCheckTimeoutSeconds, 3, 30);
 
         if (SchemaVersion < CurrentSchemaVersion)
         {

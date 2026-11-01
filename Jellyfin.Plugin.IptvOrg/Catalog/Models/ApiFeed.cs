@@ -16,6 +16,10 @@ internal sealed class ApiFeed
     [JsonPropertyName("id")]
     public string Id { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets the feed name, for example <c>HD</c> or <c>+2</c>.</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
     /// <summary>Gets or sets a value indicating whether this is the channel's main feed.</summary>
     [JsonPropertyName("is_main")]
     public bool IsMain { get; set; }

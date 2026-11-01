@@ -20,6 +20,18 @@ public sealed class PluginStatus
     /// <summary>Gets or sets the number of channels per category in the whole catalog.</summary>
     public IReadOnlyDictionary<string, int> CatalogCategoryCounts { get; set; } = new Dictionary<string, int>();
 
+    /// <summary>Gets or sets a value indicating whether streams were checked in the last build.</summary>
+    public bool StreamCheckEnabled { get; set; }
+
+    /// <summary>Gets or sets the number of streams probed in the last build (cached results excluded).</summary>
+    public int StreamsChecked { get; set; }
+
+    /// <summary>Gets or sets the number of dead streams found in the last build.</summary>
+    public int DeadStreams { get; set; }
+
+    /// <summary>Gets or sets the number of channels left out because no stream worked.</summary>
+    public int DroppedChannels { get; set; }
+
     /// <summary>Gets or sets the time of the last guide update.</summary>
     public DateTime? LastGuideUtc { get; set; }
 

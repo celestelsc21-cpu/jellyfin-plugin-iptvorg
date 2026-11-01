@@ -74,4 +74,11 @@ public interface IIptvOrgService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The categories in catalog order.</returns>
     Task<IReadOnlyList<CategoryInfo>> GetCategoriesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Gets the country, language and region values with channel counts.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The filter values (empty before the first build).</returns>
+    Task<FilterCatalog> GetFiltersAsync(CancellationToken cancellationToken);
 }

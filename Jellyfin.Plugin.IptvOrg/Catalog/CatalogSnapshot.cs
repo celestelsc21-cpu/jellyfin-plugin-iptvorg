@@ -14,6 +14,8 @@ namespace Jellyfin.Plugin.IptvOrg.Catalog;
 /// <param name="Logos">Logos.</param>
 /// <param name="Regions">Regions.</param>
 /// <param name="Guides">Guide sources.</param>
+/// <param name="Countries">Countries.</param>
+/// <param name="Languages">Languages.</param>
 internal sealed record CatalogSnapshot(
     IReadOnlyList<ApiChannel> Channels,
     IReadOnlyList<ApiFeed> Feeds,
@@ -21,4 +23,6 @@ internal sealed record CatalogSnapshot(
     IReadOnlyList<ApiCategory> Categories,
     IReadOnlyList<ApiLogo> Logos,
     IReadOnlyList<ApiRegion> Regions,
-    IReadOnlyList<ApiGuide> Guides);
+    IReadOnlyList<ApiGuide> Guides,
+    IReadOnlyList<ApiCountry> Countries,
+    IReadOnlyList<ApiLanguage> Languages);

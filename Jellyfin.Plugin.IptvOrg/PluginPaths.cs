@@ -21,6 +21,9 @@ internal sealed class PluginPaths
         GuidePath = Path.Combine(DataDirectory, IptvOrgConstants.GuideFileName);
         StatusPath = Path.Combine(DataDirectory, IptvOrgConstants.StatusFileName);
         GuideDownloadDirectory = Path.Combine(CacheDirectory, "guides");
+        EntriesPath = Path.Combine(DataDirectory, IptvOrgConstants.EntriesFileName);
+        FiltersPath = Path.Combine(DataDirectory, IptvOrgConstants.FiltersFileName);
+        StreamCheckPath = Path.Combine(DataDirectory, IptvOrgConstants.StreamCheckFileName);
     }
 
     /// <summary>Gets the directory with downloaded API files.</summary>
@@ -37,6 +40,15 @@ internal sealed class PluginPaths
 
     /// <summary>Gets the persisted status path.</summary>
     public string StatusPath { get; }
+
+    /// <summary>Gets the persisted playlist channels path.</summary>
+    public string EntriesPath { get; }
+
+    /// <summary>Gets the persisted filter values path.</summary>
+    public string FiltersPath { get; }
+
+    /// <summary>Gets the stream check cache path.</summary>
+    public string StreamCheckPath { get; }
 
     /// <summary>Gets the temporary directory for guide downloads.</summary>
     public string GuideDownloadDirectory { get; }

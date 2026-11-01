@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Jellyfin.Plugin.IptvOrg.Catalog;
 using Jellyfin.Plugin.IptvOrg.Catalog.Models;
 
@@ -11,18 +12,27 @@ namespace Jellyfin.Plugin.IptvOrg.Playlist;
 /// Turns the iptv-org catalog into a filtered, de-duplicated, categorized channel list.
 /// Pure logic without I/O, so it is fully unit-testable.
 /// </summary>
-internal static class PlaylistBuilder
+internal static partial class PlaylistBuilder
 {
     private const string GeoBlockedLabel = "Geo-blocked";
     private const string Not247Label = "Not 24/7";
 
     /// <summary>
-    /// Builds the playlist entries.
+    /// Builds the playlist entries without stream checks.
     /// </summary>
     /// <param name="catalog">Catalog snapshot.</param>
     /// <param name="options">Filter options.</param>
     /// <returns>Entries ordered by category and name, numbered from 1.</returns>
     public static IReadOnlyList<PlaylistEntry> Build(CatalogSnapshot catalog, ChannelFilterOptions options)
+        => Materialize(Collect(catalog, options), catalog, options, deadUrls: null);
+
+    /// <summary>
+    /// Applies the filters and groups the remaining streams into future channels.
+    /// </summary>
+    /// <param name="catalog">Catalog snapshot.</param>
+    /// <param name="options">Filter options.</param>
+    /// <returns>One group per playlist channel, with its streams best first.</returns>
+    public static IReadOnlyList<ChannelCandidates> Collect(CatalogSnapshot catalog, ChannelFilterOptions options)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(options);
@@ -53,17 +63,12 @@ internal static class PlaylistBuilder
         }
 
         var allowedCountries = ExpandCountries(catalog, options);
-        var categoryRank = BuildCategoryRank(catalog);
-        var categoryApiNames = catalog.Categories
-            .Where(c => !string.IsNullOrEmpty(c.Id))
-            .GroupBy(c => c.Id, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First().Name, StringComparer.OrdinalIgnoreCase);
         var enabledCategories = options.Categories.Count == 0
             ? null
             : new HashSet<string>(options.Categories, StringComparer.OrdinalIgnoreCase);
 
-        // Best candidate per (channel, feed), or per URL for streams without a channel.
-        var best = new Dictionary<string, Candidate>(StringComparer.Ordinal);
+        // Group key: channel (one entry per channel), channel@feed, or the URL for streams without a channel.
+        var groups = new Dictionary<string, (ApiChannel? Channel, string Category, List<StreamCandidate> Streams)>(StringComparer.Ordinal);
 
         foreach (var stream in catalog.Streams)
         {
@@ -107,13 +112,22 @@ internal static class PlaylistBuilder
                 continue;
             }
 
-            var feedId = string.IsNullOrEmpty(stream.Feed)
-                ? (channel is not null && mainFeeds.TryGetValue(channel.Id, out var main) ? main.Id : null)
-                : stream.Feed;
+            ApiFeed? mainFeed = null;
+            if (channel is not null)
+            {
+                mainFeeds.TryGetValue(channel.Id, out mainFeed);
+            }
+
+            var feedId = string.IsNullOrEmpty(stream.Feed) ? mainFeed?.Id : stream.Feed;
             ApiFeed? feed = null;
             if (channel is not null && feedId is not null)
             {
                 feeds.TryGetValue((channel.Id, feedId), out feed);
+            }
+
+            if (options.HideTimeshiftFeeds && IsTimeshift(feedId, feed?.Name))
+            {
+                continue;
             }
 
             if (options.Languages.Count > 0
@@ -135,54 +149,129 @@ internal static class PlaylistBuilder
                 continue;
             }
 
-            var key = channel is null
-                ? "url:" + stream.Url.Trim()
-                : channel.Id + "@" + (feedId ?? string.Empty);
-            var candidate = new Candidate(stream, channel, feedId, category);
-            if (!best.TryGetValue(key, out var existing) || candidate.Score > existing.Score)
+            string key;
+            if (channel is null)
             {
-                best[key] = candidate;
+                key = "url:" + stream.Url.Trim();
             }
+            else if (options.OneStreamPerChannel)
+            {
+                key = channel.Id;
+            }
+            else
+            {
+                key = channel.Id + "@" + (feedId ?? string.Empty);
+            }
+
+            if (!groups.TryGetValue(key, out var group))
+            {
+                group = (channel, category, new List<StreamCandidate>());
+                groups[key] = group;
+            }
+
+            var isMain = feedId is not null && string.Equals(feedId, mainFeed?.Id, StringComparison.Ordinal);
+            group.Streams.Add(new StreamCandidate(stream, feedId, isMain));
         }
 
+        return groups.Values
+            .Select(g => new ChannelCandidates(
+                g.Channel,
+                g.Category,
+                g.Streams
+                    .GroupBy(c => c.Url, StringComparer.Ordinal)
+                    .Select(d => d.First())
+                    .OrderBy(c => c.Stream.Labels?.Count ?? 0)
+                    .ThenByDescending(c => ParseQuality(c.Stream.Quality))
+                    .ThenByDescending(c => c.IsMainFeed)
+                    .ThenBy(c => c.Url, StringComparer.Ordinal)
+                    .ToArray()))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Picks the first working stream of every group and produces the numbered playlist.
+    /// </summary>
+    /// <param name="groups">Groups from <see cref="Collect"/>.</param>
+    /// <param name="catalog">Catalog snapshot (categories and logos).</param>
+    /// <param name="options">Filter options.</param>
+    /// <param name="deadUrls">URLs known not to work, or <c>null</c> when streams were not checked.</param>
+    /// <returns>Entries ordered by category and name, numbered from 1.</returns>
+    public static IReadOnlyList<PlaylistEntry> Materialize(
+        IReadOnlyList<ChannelCandidates> groups,
+        CatalogSnapshot catalog,
+        ChannelFilterOptions options,
+        IReadOnlySet<string>? deadUrls)
+    {
+        ArgumentNullException.ThrowIfNull(groups);
+        ArgumentNullException.ThrowIfNull(catalog);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var categoryRank = BuildCategoryRank(catalog);
+        var categoryApiNames = catalog.Categories
+            .Where(c => !string.IsNullOrEmpty(c.Id))
+            .GroupBy(c => c.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Name, StringComparer.OrdinalIgnoreCase);
         var logos = BuildLogoIndex(catalog.Logos);
 
-        var ordered = best.Values
-            .Select(c => new
+        var chosen = new List<(ChannelCandidates Group, StreamCandidate Stream, string Name, int Rank)>(groups.Count);
+        foreach (var group in groups)
+        {
+            var stream = group.Streams.FirstOrDefault(s => deadUrls is null || !deadUrls.Contains(s.Url));
+            if (stream is null)
             {
-                Candidate = c,
-                Name = GetName(c),
-                Rank = categoryRank.TryGetValue(c.Category, out var rank) ? rank : int.MaxValue - 1
-            })
-            .OrderBy(x => string.Equals(x.Candidate.Category, IptvOrgConstants.UndefinedCategory, StringComparison.OrdinalIgnoreCase) ? int.MaxValue : x.Rank)
-            .ThenBy(x => x.Name, StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.IgnoreCase))
-            .ThenBy(x => x.Candidate.Stream.Url, StringComparer.Ordinal)
+                continue;
+            }
+
+            var rank = string.Equals(group.Category, IptvOrgConstants.UndefinedCategory, StringComparison.OrdinalIgnoreCase)
+                ? int.MaxValue
+                : categoryRank.GetValueOrDefault(group.Category, int.MaxValue - 1);
+            chosen.Add((group, stream, GetName(group.Channel, stream.Stream), rank));
+        }
+
+        var nameComparer = StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.IgnoreCase);
+        var ordered = chosen
+            .OrderBy(x => x.Rank)
+            .ThenBy(x => x.Name, nameComparer)
+            .ThenBy(x => x.Stream.Url, StringComparer.Ordinal)
             .ToList();
 
         var result = new List<PlaylistEntry>(ordered.Count);
         var number = 1;
         foreach (var item in ordered)
         {
-            var c = item.Candidate;
-            var categoryName = CategoryNames.Get(c.Category, categoryApiNames.GetValueOrDefault(c.Category));
+            var channel = item.Group.Channel;
+            var feedId = item.Stream.FeedId;
+            var categoryName = CategoryNames.Get(item.Group.Category, categoryApiNames.GetValueOrDefault(item.Group.Category));
             var name = options.PrefixCategoryInName ? $"[{categoryName}] {item.Name}" : item.Name;
-            var tvgId = c.Channel is null
+            var tvgId = channel is null
                 ? null
-                : (string.IsNullOrEmpty(c.FeedId) ? c.Channel.Id : c.Channel.Id + "@" + c.FeedId);
+                : (string.IsNullOrEmpty(feedId) ? channel.Id : channel.Id + "@" + feedId);
 
             result.Add(new PlaylistEntry(
                 tvgId,
-                c.Channel?.Id,
-                c.FeedId,
+                channel?.Id,
+                feedId,
                 name,
-                c.Stream.Url.Trim(),
-                c.Channel is null ? null : FindLogo(logos, c.Channel.Id, c.FeedId),
-                c.Category,
+                item.Stream.Url,
+                channel is null ? null : FindLogo(logos, channel.Id, feedId),
+                item.Group.Category,
                 categoryName,
                 number++));
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Detects time-shifted feeds such as <c>Plus2</c> / <c>+2</c> or <c>HDPlus4</c> / <c>HD +4</c>.
+    /// </summary>
+    /// <param name="feedId">Feed id.</param>
+    /// <param name="feedName">Feed name.</param>
+    /// <returns><c>true</c> for a time-shifted feed.</returns>
+    internal static bool IsTimeshift(string? feedId, string? feedName)
+    {
+        return (feedId is not null && TimeshiftIdRegex().IsMatch(feedId))
+            || (feedName is not null && TimeshiftNameRegex().IsMatch(feedName));
     }
 
     /// <summary>
@@ -323,21 +412,20 @@ internal static class PlaylistBuilder
     private static bool HasLabel(ApiStream stream, string label)
         => stream.Labels?.Any(l => string.Equals(l, label, StringComparison.OrdinalIgnoreCase)) ?? false;
 
-    private static string GetName(Candidate candidate)
+    private static string GetName(ApiChannel? channel, ApiStream stream)
     {
-        var title = candidate.Stream.Title;
-        if (!string.IsNullOrWhiteSpace(title))
+        if (!string.IsNullOrWhiteSpace(stream.Title))
         {
-            return title.Trim();
+            return stream.Title.Trim();
         }
 
-        var channelName = candidate.Channel?.Name;
+        var channelName = channel?.Name;
         if (!string.IsNullOrWhiteSpace(channelName))
         {
             return channelName.Trim();
         }
 
-        return candidate.Channel?.Id ?? candidate.Stream.Url.Trim();
+        return channel?.Id ?? stream.Url.Trim();
     }
 
     private static Dictionary<string, List<ApiLogo>> BuildLogoIndex(IReadOnlyList<ApiLogo> logos)
@@ -380,18 +468,9 @@ internal static class PlaylistBuilder
             .FirstOrDefault();
     }
 
-    private sealed record Candidate(ApiStream Stream, ApiChannel? Channel, string? FeedId, string Category)
-    {
-        /// <summary>
-        /// Gets the preference score: streams without warning labels first, then higher quality.
-        /// </summary>
-        public int Score
-        {
-            get
-            {
-                var labelPenalty = (Stream.Labels?.Count ?? 0) * 100_000;
-                return ParseQuality(Stream.Quality) - labelPenalty;
-            }
-        }
-    }
+    [GeneratedRegex(@"(Plus|Minus)\d+$", RegexOptions.CultureInvariant)]
+    private static partial Regex TimeshiftIdRegex();
+
+    [GeneratedRegex(@"(^|\s)[+\-\u2212]\d{1,2}(\s|$)", RegexOptions.CultureInvariant)]
+    private static partial Regex TimeshiftNameRegex();
 }

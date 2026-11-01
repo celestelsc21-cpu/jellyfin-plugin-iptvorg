@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -13,6 +14,7 @@ using Jellyfin.Plugin.IptvOrg.Catalog;
 using Jellyfin.Plugin.IptvOrg.Configuration;
 using Jellyfin.Plugin.IptvOrg.Guide;
 using Jellyfin.Plugin.IptvOrg.Playlist;
+using Jellyfin.Plugin.IptvOrg.Streams;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.LiveTv;
@@ -37,6 +39,7 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     private readonly IIptvOrgClient _client;
+    private readonly IStreamChecker _streamChecker;
     private readonly IPluginConfigurationAccessor _config;
     private readonly PluginPaths _paths;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -53,6 +56,7 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
     /// Initializes a new instance of the <see cref="IptvOrgService"/> class.
     /// </summary>
     /// <param name="client">iptv-org API client.</param>
+    /// <param name="streamChecker">Stream checker.</param>
     /// <param name="config">Configuration accessor.</param>
     /// <param name="paths">Plugin paths.</param>
     /// <param name="httpClientFactory">HTTP client factory.</param>
@@ -64,6 +68,7 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
     /// <param name="logger">Logger.</param>
     public IptvOrgService(
         IIptvOrgClient client,
+        IStreamChecker streamChecker,
         IPluginConfigurationAccessor config,
         PluginPaths paths,
         IHttpClientFactory httpClientFactory,
@@ -75,6 +80,7 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
         ILogger<IptvOrgService> logger)
     {
         _client = client;
+        _streamChecker = streamChecker;
         _config = config;
         _paths = paths;
         _httpClientFactory = httpClientFactory;
@@ -119,9 +125,9 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
                 s.LastSyncUtc = _timeProvider.GetUtcNow().UtcDateTime;
                 s.LastError = null;
             });
-            progress.Report(70);
+            progress.Report(30);
 
-            await RebuildPlaylistCoreAsync(cancellationToken).ConfigureAwait(false);
+            await RebuildPlaylistCoreAsync(new Progress<double>(p => progress.Report(30 + (0.7 * p))), cancellationToken).ConfigureAwait(false);
             progress.Report(100);
         }
         finally
@@ -136,7 +142,7 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await RebuildPlaylistCoreAsync(cancellationToken).ConfigureAwait(false);
+            await RebuildPlaylistCoreAsync(new Progress<double>(), cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -156,9 +162,9 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
             return;
         }
 
-        if (!HasCatalog)
+        if (!HasCatalog || !File.Exists(_paths.EntriesPath))
         {
-            _logger.LogInformation("IPTV-org catalog is not downloaded yet; skipping the guide update");
+            _logger.LogInformation("IPTV-org playlist is not built yet; skipping the guide update");
             return;
         }
 
@@ -280,12 +286,36 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
     }
 
     /// <inheritdoc />
+    public async Task<FilterCatalog> GetFiltersAsync(CancellationToken cancellationToken)
+    {
+        if (!File.Exists(_paths.FiltersPath))
+        {
+            return new FilterCatalog();
+        }
+
+        try
+        {
+            var stream = new FileStream(_paths.FiltersPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous);
+            await using (stream.ConfigureAwait(false))
+            {
+                return await JsonSerializer.DeserializeAsync<FilterCatalog>(stream, cancellationToken: cancellationToken).ConfigureAwait(false)
+                    ?? new FilterCatalog();
+            }
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Could not read the IPTV-org filter values");
+            return new FilterCatalog();
+        }
+    }
+
+    /// <inheritdoc />
     public void Dispose()
     {
         _gate.Dispose();
     }
 
-    private async Task RebuildPlaylistCoreAsync(CancellationToken cancellationToken)
+    private async Task RebuildPlaylistCoreAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         if (!HasCatalog)
         {
@@ -294,12 +324,39 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
         }
 
         var config = _config.Current;
+        var options = ChannelFilterOptions.FromConfiguration(config);
         var catalog = await CatalogLoader.LoadAsync(_paths.CacheDirectory, cancellationToken).ConfigureAwait(false);
-        var entries = PlaylistBuilder.Build(catalog, ChannelFilterOptions.FromConfiguration(config));
+        var groups = PlaylistBuilder.Collect(catalog, options);
         var counts = PlaylistBuilder.CountByCategory(catalog, includeNsfw: true);
-        var content = M3uWriter.Write(entries);
+        var filters = FilterCatalogBuilder.Build(catalog, config.IncludeNsfw);
+
+        // Keep only what the final step needs, so the large lists can be collected during
+        // the (possibly long) stream checks. Async locals live until the method returns.
+        var slim = catalog with
+        {
+            Channels = [],
+            Feeds = [],
+            Streams = [],
+            Regions = [],
+            Guides = [],
+            Countries = [],
+            Languages = []
+        };
+        catalog = null;
+        progress.Report(5);
 
         Directory.CreateDirectory(_paths.DataDirectory);
+
+        IReadOnlySet<string>? dead = null;
+        var check = new StreamCheckSummary(0, 0, 0);
+        if (config.CheckStreams)
+        {
+            (dead, check) = await CheckStreamsAsync(groups, config, new Progress<double>(p => progress.Report(5 + (0.9 * p))), cancellationToken).ConfigureAwait(false);
+        }
+
+        var entries = PlaylistBuilder.Materialize(groups, slim, options, dead);
+        var content = M3uWriter.Write(entries);
+
         var changed = !File.Exists(_paths.PlaylistPath)
             || !string.Equals(
                 await File.ReadAllTextAsync(_paths.PlaylistPath, cancellationToken).ConfigureAwait(false),
@@ -308,27 +365,107 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
 
         if (changed)
         {
-            var tempPath = _paths.PlaylistPath + ".tmp";
-            await File.WriteAllTextAsync(tempPath, content, Utf8NoBom, cancellationToken).ConfigureAwait(false);
-            File.Move(tempPath, _paths.PlaylistPath, overwrite: true);
+            await WriteFileAtomicallyAsync(_paths.PlaylistPath, content, cancellationToken).ConfigureAwait(false);
         }
+
+        await WriteFileAtomicallyAsync(_paths.EntriesPath, JsonSerializer.Serialize(entries), cancellationToken).ConfigureAwait(false);
+        await WriteFileAtomicallyAsync(_paths.FiltersPath, JsonSerializer.Serialize(filters), cancellationToken).ConfigureAwait(false);
 
         UpdateStatus(s =>
         {
             s.LastPlaylistUtc = _timeProvider.GetUtcNow().UtcDateTime;
             s.ChannelCount = entries.Count;
             s.CatalogCategoryCounts = counts;
+            s.StreamsChecked = check.Checked;
+            s.DeadStreams = check.Dead;
+            s.DroppedChannels = check.DroppedChannels;
+            s.StreamCheckEnabled = config.CheckStreams;
         });
 
         _logger.LogInformation(
-            "IPTV-org playlist built: {Count} channels ({State})",
+            "IPTV-org playlist built: {Count} channels ({State}); streams checked {Checked}, dead {Dead}, channels without a working stream {Dropped}",
             entries.Count,
-            changed ? "updated" : "unchanged");
+            changed ? "updated" : "unchanged",
+            check.Checked,
+            check.Dead,
+            check.DroppedChannels);
 
         if (changed && GetRegistration().TunerId is not null)
         {
             QueueJellyfinGuideRefresh();
         }
+
+        progress.Report(100);
+    }
+
+    private async Task<(IReadOnlySet<string> Dead, StreamCheckSummary Summary)> CheckStreamsAsync(
+        IReadOnlyList<ChannelCandidates> groups,
+        PluginConfiguration config,
+        IProgress<double> progress,
+        CancellationToken cancellationToken)
+    {
+        var cache = await StreamCheckCache.LoadAsync(_paths.StreamCheckPath, cancellationToken).ConfigureAwait(false);
+        var timeout = TimeSpan.FromSeconds(config.StreamCheckTimeoutSeconds);
+        var dead = new ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
+        var probed = 0;
+        var dropped = 0;
+        var done = 0;
+
+        var parallel = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = config.StreamCheckConcurrency,
+            CancellationToken = cancellationToken
+        };
+
+        await Parallel.ForEachAsync(groups, parallel, async (group, token) =>
+        {
+            var found = false;
+            foreach (var candidate in group.Streams)
+            {
+                var now = _timeProvider.GetUtcNow().UtcDateTime;
+                if (!cache.TryGetFresh(candidate.Url, now, out var alive))
+                {
+                    alive = await _streamChecker.IsAliveAsync(candidate.Url, timeout, token).ConfigureAwait(false);
+                    cache.Set(candidate.Url, alive, _timeProvider.GetUtcNow().UtcDateTime);
+                    Interlocked.Increment(ref probed);
+                }
+
+                if (alive)
+                {
+                    // Streams after the first working one are not needed.
+                    found = true;
+                    break;
+                }
+
+                dead[candidate.Url] = true;
+            }
+
+            if (!found)
+            {
+                Interlocked.Increment(ref dropped);
+            }
+
+            progress.Report(100.0 * Interlocked.Increment(ref done) / Math.Max(1, groups.Count));
+        }).ConfigureAwait(false);
+
+        try
+        {
+            await cache.SaveAsync(_paths.StreamCheckPath, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken).ConfigureAwait(false);
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "Could not save the IPTV-org stream check cache");
+        }
+
+        var deadSet = new HashSet<string>(dead.Keys, StringComparer.Ordinal);
+        return (deadSet, new StreamCheckSummary(probed, deadSet.Count, dropped));
+    }
+
+    private static async Task WriteFileAtomicallyAsync(string path, string content, CancellationToken cancellationToken)
+    {
+        var tempPath = path + ".tmp";
+        await File.WriteAllTextAsync(tempPath, content, Utf8NoBom, cancellationToken).ConfigureAwait(false);
+        File.Move(tempPath, path, overwrite: true);
     }
 
     private async Task UpdateGuideCoreAsync(PluginConfiguration config, IProgress<double> progress, CancellationToken cancellationToken)
@@ -423,9 +560,17 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
         PluginConfiguration config,
         CancellationToken cancellationToken)
     {
-        var catalog = await CatalogLoader.LoadAsync(_paths.CacheDirectory, cancellationToken).ConfigureAwait(false);
-        var entries = PlaylistBuilder.Build(catalog, ChannelFilterOptions.FromConfiguration(config));
-        var sources = GuideSourcePlanner.Plan(entries, catalog.Guides, config.MaxGuideSources);
+        // The guide follows the last built playlist exactly (including stream checks),
+        // and only the small guides.json is parsed here.
+        var stream = new FileStream(_paths.EntriesPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous);
+        IReadOnlyList<PlaylistEntry> entries;
+        await using (stream.ConfigureAwait(false))
+        {
+            entries = await JsonSerializer.DeserializeAsync<List<PlaylistEntry>>(stream, cancellationToken: cancellationToken).ConfigureAwait(false) ?? [];
+        }
+
+        var guides = await CatalogLoader.LoadGuidesAsync(_paths.CacheDirectory, cancellationToken).ConfigureAwait(false);
+        var sources = GuideSourcePlanner.Plan(entries, guides, config.MaxGuideSources);
         return (entries, sources);
     }
 

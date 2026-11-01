@@ -44,8 +44,10 @@ internal static class CatalogLoader
         var logos = await ReadAsync<ApiLogo>(cacheDirectory, CatalogFiles.Logos, cancellationToken).ConfigureAwait(false);
         var regions = await ReadAsync<ApiRegion>(cacheDirectory, CatalogFiles.Regions, cancellationToken).ConfigureAwait(false);
         var guides = await ReadAsync<ApiGuide>(cacheDirectory, CatalogFiles.Guides, cancellationToken).ConfigureAwait(false);
+        var countries = await ReadAsync<ApiCountry>(cacheDirectory, CatalogFiles.Countries, cancellationToken).ConfigureAwait(false);
+        var languages = await ReadAsync<ApiLanguage>(cacheDirectory, CatalogFiles.Languages, cancellationToken).ConfigureAwait(false);
 
-        return new CatalogSnapshot(channels, feeds, streams, categories, logos, regions, guides);
+        return new CatalogSnapshot(channels, feeds, streams, categories, logos, regions, guides, countries, languages);
     }
 
     /// <summary>
@@ -63,6 +65,15 @@ internal static class CatalogLoader
 
         return await ReadAsync<ApiCategory>(cacheDirectory, CatalogFiles.Categories, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Loads only the guide mappings, for the guide update.
+    /// </summary>
+    /// <param name="cacheDirectory">Cache directory.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The guide mappings.</returns>
+    public static Task<IReadOnlyList<ApiGuide>> LoadGuidesAsync(string cacheDirectory, CancellationToken cancellationToken)
+        => ReadAsync<ApiGuide>(cacheDirectory, CatalogFiles.Guides, cancellationToken);
 
     private static async Task<IReadOnlyList<T>> ReadAsync<T>(string directory, string fileName, CancellationToken cancellationToken)
     {

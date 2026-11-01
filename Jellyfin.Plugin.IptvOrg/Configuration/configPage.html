@@ -6,6 +6,11 @@
 </head>
 <body>
     <div id="IptvOrgConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+        <style>
+            .iptvOrgFilterList { max-height: 18em; overflow-y: auto; margin: .25em 0 1em; padding-right: .5em; }
+            .iptvOrgFilterList .checkboxContainer { margin: .15em 0; }
+            .iptvOrgFilterList .iptvOrgSelected { font-weight: 600; }
+        </style>
         <div data-role="content">
             <div class="content-primary">
                 <form id="IptvOrgConfigForm">
@@ -32,6 +37,61 @@
                         <button is="emby-button" type="button" id="IptvOrgSelectNone" class="emby-button"><span>Снять все</span></button>
                     </div>
                     <div id="IptvOrgCategories" class="checkboxList"></div>
+
+                    <h2 class="sectionTitle">Страны и регионы</h2>
+                    <div class="fieldDescription">
+                        Страна — откуда вещает канал. Страны и регионы объединяются: канал проходит, если подходит под любую из отмеченных.
+                        Ничего не отмечено — без ограничения. Отмеченные показываются первыми.
+                    </div>
+                    <div class="inputContainer" style="margin-top:.75em;">
+                        <input id="IptvOrgCountrySearch" type="search" is="emby-input" placeholder="Поиск страны или региона" autocomplete="off" />
+                    </div>
+                    <div id="IptvOrgCountries" class="iptvOrgFilterList"></div>
+                    <div id="IptvOrgRegions" class="iptvOrgFilterList"></div>
+
+                    <h2 class="sectionTitle">Языки</h2>
+                    <div class="fieldDescription">Язык вещания канала. Ничего не отмечено — без ограничения.</div>
+                    <div class="inputContainer" style="margin-top:.75em;">
+                        <input id="IptvOrgLanguageSearch" type="search" is="emby-input" placeholder="Поиск языка" autocomplete="off" />
+                    </div>
+                    <div id="IptvOrgLanguages" class="iptvOrgFilterList"></div>
+
+                    <h2 class="sectionTitle">Несколько потоков у канала</h2>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgOnePerChannel" />
+                            <span>Один канал — одна строка (лучший рабочий поток из HD/SD/региональных)</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Если выключить, каждый вариант канала (HD, SD, региональный) будет отдельным каналом.</div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgHideTimeshift" />
+                            <span>Скрывать версии со сдвигом по времени (+1, +2, «HD +4»…)</span>
+                        </label>
+                    </div>
+
+                    <h2 class="sectionTitle">Проверка потоков</h2>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgCheckStreams" />
+                            <span>Проверять потоки и не добавлять нерабочие</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            Плагин запрашивает только плейлист потока (несколько КБ). Если поток не отвечает, берётся следующий поток того же канала;
+                            канал без рабочих потоков в плейлист не попадает. Результаты запоминаются: рабочие перепроверяются раз в сутки, нерабочие — раз в 3 дня.
+                        </div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="IptvOrgCheckConcurrency">Одновременных проверок</label>
+                        <input id="IptvOrgCheckConcurrency" type="number" is="emby-input" min="1" max="16" step="1" required />
+                        <div class="fieldDescription">Больше — быстрее, но выше нагрузка на сеть. Для слабого сервера 4.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="IptvOrgCheckTimeout">Таймаут проверки, секунд</label>
+                        <input id="IptvOrgCheckTimeout" type="number" is="emby-input" min="3" max="30" step="1" required />
+                        <div class="fieldDescription">Меньше — быстрее отсеиваются «зависшие» ссылки, но могут отсеяться медленные рабочие серверы.</div>
+                    </div>
 
                     <h2 class="sectionTitle">Потоки</h2>
                     <div class="checkboxContainer">
@@ -65,7 +125,7 @@
                             <input is="emby-checkbox" type="checkbox" id="IptvOrgNsfw" />
                             <span>Включать каналы для взрослых (18+)</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">По умолчанию выключено. Ограничение доступа по пользователям появится в следующем этапе.</div>
+                        <div class="fieldDescription checkboxFieldDescription">По умолчанию выключено. Ограничение доступа по пользователям появится в следующей версии.</div>
                     </div>
 
                     <h2 class="sectionTitle">Телегид</h2>
@@ -113,11 +173,81 @@
                     return value ? '✅ подключён' : '❌ не подключён';
                 }
 
+                var regionNames = null;
+                var languageNames = null;
+                try {
+                    regionNames = new Intl.DisplayNames(['ru'], { type: 'region' });
+                    languageNames = new Intl.DisplayNames(['ru'], { type: 'language' });
+                } catch (e) {
+                    regionNames = null;
+                    languageNames = null;
+                }
+
+                function localName(kind, code, fallback) {
+                    try {
+                        var names = kind === 'country' ? regionNames : (kind === 'language' ? languageNames : null);
+                        var value = names ? names.of(kind === 'language' ? code.toLowerCase() : code.toUpperCase()) : null;
+                        if (value && value.toLowerCase() !== code.toLowerCase()) {
+                            return value.charAt(0).toUpperCase() + value.slice(1);
+                        }
+                    } catch (e) {
+                        // Unknown code for Intl: use the iptv-org name.
+                    }
+
+                    return fallback || code;
+                }
+
+                function renderFilterList(container, kind, options, selected) {
+                    var chosen = (selected || []).map(function (v) { return String(v).toLowerCase(); });
+                    var items = (options || []).map(function (o) {
+                        var isSelected = chosen.indexOf(String(o.Code).toLowerCase()) !== -1;
+                        return { option: o, name: localName(kind, o.Code, o.Name), selected: isSelected };
+                    });
+                    // Selected values that no longer have channels stay visible so they can be removed.
+                    chosen.forEach(function (code) {
+                        if (!items.some(function (i) { return String(i.option.Code).toLowerCase() === code; })) {
+                            items.push({ option: { Code: code, Name: code, Flag: null, ChannelCount: 0 }, name: localName(kind, code, code), selected: true });
+                        }
+                    });
+                    items.sort(function (a, b) {
+                        if (a.selected !== b.selected) { return a.selected ? -1 : 1; }
+                        return (b.option.ChannelCount || 0) - (a.option.ChannelCount || 0);
+                    });
+
+                    container.innerHTML = items.map(function (i) {
+                        var label = (i.option.Flag ? i.option.Flag + ' ' : '') + i.name;
+                        return '<label class="checkboxContainer" style="display:block;" data-search="' + escapeHtml((i.name + ' ' + i.option.Name + ' ' + i.option.Code).toLowerCase()) + '">'
+                            + '<input is="emby-checkbox" type="checkbox" class="iptvOrgFilter" data-kind="' + kind + '" data-code="' + escapeHtml(i.option.Code) + '"' + (i.selected ? ' checked' : '') + ' />'
+                            + '<span class="' + (i.selected ? 'iptvOrgSelected' : '') + '">' + escapeHtml(label) + ' <span class="fieldDescription">(' + escapeHtml(i.option.ChannelCount) + ')</span></span>'
+                            + '</label>';
+                    }).join('') || '<div class="fieldDescription">Список появится после первой сборки плейлиста.</div>';
+                }
+
+                function applySearch(input, containers) {
+                    var query = input.value.trim().toLowerCase();
+                    containers.forEach(function (container) {
+                        Array.prototype.forEach.call(container.querySelectorAll('label[data-search]'), function (label) {
+                            var box = label.querySelector('input');
+                            var visible = !query || label.getAttribute('data-search').indexOf(query) !== -1 || (box && box.checked);
+                            label.style.display = visible ? 'block' : 'none';
+                        });
+                    });
+                }
+
+                function collectFilter(kind) {
+                    return Array.prototype.slice.call(page.querySelectorAll('.iptvOrgFilter[data-kind="' + kind + '"]'))
+                        .filter(function (b) { return b.checked; })
+                        .map(function (b) { return b.getAttribute('data-code'); });
+                }
+
                 function renderStatus(response) {
                     var s = response.Status || {};
                     var lines = [
                         '<b>Каталог iptv-org:</b> ' + escapeHtml(response.HasCatalog ? formatDate(s.LastSyncUtc) : 'ещё не скачан (первая загрузка начнётся автоматически через пару минут после запуска)'),
                         '<b>Каналов в плейлисте:</b> ' + escapeHtml(s.ChannelCount || 0) + ' (собран: ' + escapeHtml(formatDate(s.LastPlaylistUtc)) + ')',
+                        '<b>Проверка потоков:</b> ' + escapeHtml(s.StreamCheckEnabled
+                            ? ('проверено по сети ' + s.StreamsChecked + ', нерабочих потоков ' + s.DeadStreams + ', каналов без рабочего потока (не добавлены) ' + s.DroppedChannels)
+                            : 'выключена'),
                         '<b>Телегид:</b> ' + escapeHtml(s.LastGuideUtc
                             ? (s.GuideChannelCount + ' каналов с программой, ' + s.GuideProgrammeCount + ' передач; файлов прочитано ' + s.GuideSourcesUsed + ', с ошибкой ' + s.GuideSourcesFailed + ' (' + formatDate(s.LastGuideUtc) + ')')
                             : 'ещё не собирался'),
@@ -173,7 +303,8 @@
                     Promise.all([
                         ApiClient.getPluginConfiguration(pluginId),
                         ApiClient.getJSON(ApiClient.getUrl('IptvOrg/Categories')),
-                        ApiClient.getJSON(ApiClient.getUrl('IptvOrg/Status'))
+                        ApiClient.getJSON(ApiClient.getUrl('IptvOrg/Status')),
+                        ApiClient.getJSON(ApiClient.getUrl('IptvOrg/Filters'))
                     ]).then(function (results) {
                         var config = results[0];
                         $('#IptvOrgSkipHeaders').checked = !!config.SkipStreamsWithCustomHeaders;
@@ -185,6 +316,15 @@
                         $('#IptvOrgMaxGuideSources').value = config.MaxGuideSources;
                         renderCategories(results[1] || [], config.Categories || [], !!config.IncludeNsfw);
                         renderStatus(results[2]);
+                        var filters = results[3] || {};
+                        renderFilterList($('#IptvOrgCountries'), 'country', filters.Countries, config.Countries);
+                        renderFilterList($('#IptvOrgRegions'), 'region', filters.Regions, config.Regions);
+                        renderFilterList($('#IptvOrgLanguages'), 'language', filters.Languages, config.Languages);
+                        $('#IptvOrgOnePerChannel').checked = !!config.OneStreamPerChannel;
+                        $('#IptvOrgHideTimeshift').checked = !!config.HideTimeshiftFeeds;
+                        $('#IptvOrgCheckStreams').checked = !!config.CheckStreams;
+                        $('#IptvOrgCheckConcurrency').value = config.StreamCheckConcurrency;
+                        $('#IptvOrgCheckTimeout').value = config.StreamCheckTimeoutSeconds;
                         Dashboard.hideLoadingMsg();
                     }, function () {
                         Dashboard.hideLoadingMsg();
@@ -226,6 +366,14 @@
                     });
                 });
 
+                $('#IptvOrgCountrySearch').addEventListener('input', function () {
+                    applySearch(this, [$('#IptvOrgCountries'), $('#IptvOrgRegions')]);
+                });
+
+                $('#IptvOrgLanguageSearch').addEventListener('input', function () {
+                    applySearch(this, [$('#IptvOrgLanguages')]);
+                });
+
                 $('#IptvOrgSelectAll').addEventListener('click', function () {
                     categoryBoxes().forEach(function (b) { if (!b.disabled) { b.checked = true; } });
                 });
@@ -258,6 +406,14 @@
                         config.IncludeNsfw = $('#IptvOrgNsfw').checked;
                         config.EnableGuide = $('#IptvOrgEnableGuide').checked;
                         config.MaxGuideSources = parseInt($('#IptvOrgMaxGuideSources').value, 10) || 10;
+                        config.Countries = collectFilter('country');
+                        config.Regions = collectFilter('region');
+                        config.Languages = collectFilter('language');
+                        config.OneStreamPerChannel = $('#IptvOrgOnePerChannel').checked;
+                        config.HideTimeshiftFeeds = $('#IptvOrgHideTimeshift').checked;
+                        config.CheckStreams = $('#IptvOrgCheckStreams').checked;
+                        config.StreamCheckConcurrency = parseInt($('#IptvOrgCheckConcurrency').value, 10) || 4;
+                        config.StreamCheckTimeoutSeconds = parseInt($('#IptvOrgCheckTimeout').value, 10) || 8;
                         return ApiClient.updatePluginConfiguration(pluginId, config);
                     }).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);

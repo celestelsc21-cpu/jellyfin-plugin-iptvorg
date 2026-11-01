@@ -70,6 +70,19 @@ public class IptvOrgController : ControllerBase
     }
 
     /// <summary>
+    /// Gets the countries, languages and regions with channel counts.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="200">Filter values.</response>
+    /// <returns>The filter values.</returns>
+    [HttpGet("Filters")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<ActionResult<FilterCatalog>> GetFilters(CancellationToken cancellationToken)
+    {
+        return await _service.GetFiltersAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Queues the catalog download.
     /// </summary>
     /// <response code="204">Queued.</response>

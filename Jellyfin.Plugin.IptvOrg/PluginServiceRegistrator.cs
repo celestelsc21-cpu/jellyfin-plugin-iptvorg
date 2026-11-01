@@ -5,6 +5,7 @@ using Jellyfin.Plugin.IptvOrg.Catalog;
 using Jellyfin.Plugin.IptvOrg.Configuration;
 using Jellyfin.Plugin.IptvOrg.Guide;
 using Jellyfin.Plugin.IptvOrg.Service;
+using Jellyfin.Plugin.IptvOrg.Streams;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,6 +20,9 @@ namespace Jellyfin.Plugin.IptvOrg;
 public class PluginServiceRegistrator : IPluginServiceRegistrator
 {
     private const string UserAgent = "Jellyfin-Plugin-IptvOrg";
+
+    // Many stream servers answer players only; Jellyfin itself plays streams through FFmpeg/VLC-like clients.
+    private const string ProbeUserAgent = "VLC/3.0.21 LibVLC/3.0.21";
 
     /// <inheritdoc />
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
@@ -57,7 +61,25 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
                 ConnectCallback = PublicOnlyConnector.ConnectAsync
             });
 
+        // Stream checks: public addresses only, like the guide client. Per-check timeouts
+        // come from the settings; this is only an upper bound.
+        serviceCollection
+            .AddHttpClient(IptvOrgConstants.ProbeHttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(60);
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(ProbeUserAgent);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                AutomaticDecompression = DecompressionMethods.All,
+                AllowAutoRedirect = true,
+                MaxAutomaticRedirections = 5,
+                ConnectTimeout = TimeSpan.FromSeconds(10),
+                ConnectCallback = PublicOnlyConnector.ConnectAsync
+            });
+
         serviceCollection.AddSingleton<IIptvOrgClient, IptvOrgClient>();
+        serviceCollection.AddSingleton<IStreamChecker, StreamChecker>();
         serviceCollection.AddSingleton<IIptvOrgService, IptvOrgService>();
         serviceCollection.AddHostedService<StartupService>();
     }

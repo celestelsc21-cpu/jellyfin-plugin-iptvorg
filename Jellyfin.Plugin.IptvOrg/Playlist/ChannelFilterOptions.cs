@@ -39,6 +39,12 @@ internal sealed class ChannelFilterOptions
     /// <summary>Gets or sets a value indicating whether the category is prepended to names.</summary>
     public bool PrefixCategoryInName { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether time-shifted feeds are left out.</summary>
+    public bool HideTimeshiftFeeds { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether each channel appears once, whatever its feeds.</summary>
+    public bool OneStreamPerChannel { get; set; }
+
     /// <summary>
     /// Creates options from the plugin configuration.
     /// </summary>
@@ -58,7 +64,9 @@ internal sealed class ChannelFilterOptions
             SkipStreamsWithCustomHeaders = configuration.SkipStreamsWithCustomHeaders,
             SkipGeoBlocked = configuration.SkipGeoBlocked,
             SkipNot247 = configuration.SkipNot247,
-            PrefixCategoryInName = configuration.PrefixCategoryInName
+            PrefixCategoryInName = configuration.PrefixCategoryInName,
+            HideTimeshiftFeeds = configuration.HideTimeshiftFeeds,
+            OneStreamPerChannel = configuration.OneStreamPerChannel
         };
     }
 }

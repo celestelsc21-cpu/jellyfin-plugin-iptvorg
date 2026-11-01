@@ -28,9 +28,15 @@ internal static class CatalogFiles
     /// <summary>Guide sources dataset.</summary>
     public const string Guides = "guides.json";
 
+    /// <summary>Countries dataset.</summary>
+    public const string Countries = "countries.json";
+
+    /// <summary>Languages dataset.</summary>
+    public const string Languages = "languages.json";
+
     /// <summary>
     /// Gets all files, in download order (small files first).
     /// </summary>
     public static IReadOnlyList<string> All { get; } =
-        [Categories, Regions, Feeds, Logos, Guides, Streams, Channels];
+        [Categories, Regions, Countries, Languages, Feeds, Logos, Guides, Streams, Channels];
 }

@@ -16,7 +16,7 @@ internal static class TestCatalog
         => new() { Channel = channel, Url = url, Feed = feed, Title = title, Quality = quality };
 
     public static ApiFeed Feed(string channel, string id, bool isMain, params string[] languages)
-        => new() { Channel = channel, Id = id, IsMain = isMain, Languages = languages };
+        => new() { Channel = channel, Id = id, Name = id, IsMain = isMain, Languages = languages };
 
     public static CatalogSnapshot Create(
         IReadOnlyList<ApiChannel> channels,
@@ -24,7 +24,9 @@ internal static class TestCatalog
         IReadOnlyList<ApiFeed>? feeds = null,
         IReadOnlyList<ApiLogo>? logos = null,
         IReadOnlyList<ApiRegion>? regions = null,
-        IReadOnlyList<ApiGuide>? guides = null)
+        IReadOnlyList<ApiGuide>? guides = null,
+        IReadOnlyList<ApiCountry>? countries = null,
+        IReadOnlyList<ApiLanguage>? languages = null)
     {
         var categories = new List<ApiCategory>
         {
@@ -42,6 +44,8 @@ internal static class TestCatalog
             categories,
             logos ?? [],
             regions ?? [],
-            guides ?? []);
+            guides ?? [],
+            countries ?? [],
+            languages ?? []);
     }
 }

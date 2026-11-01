@@ -18,6 +18,26 @@ internal static class IptvOrgConstants
     public const string GuideHttpClientName = "IptvOrgGuide";
 
     /// <summary>
+    /// Name of the HTTP client used for stream checks.
+    /// </summary>
+    public const string ProbeHttpClientName = "IptvOrgProbe";
+
+    /// <summary>
+    /// File name of the persisted playlist channels (read by the guide update).
+    /// </summary>
+    public const string EntriesFileName = "channels.json";
+
+    /// <summary>
+    /// File name of the persisted filter values for the settings page.
+    /// </summary>
+    public const string FiltersFileName = "filters.json";
+
+    /// <summary>
+    /// File name of the stream check cache.
+    /// </summary>
+    public const string StreamCheckFileName = "streamcheck.json";
+
+    /// <summary>
     /// Folder name used under the server data and cache directories.
     /// </summary>
     public const string FolderName = "iptvorg";
