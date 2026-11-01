@@ -51,11 +51,12 @@ public interface IIptvOrgService
 
     /// <summary>
     /// Deletes the generated guide, downloaded guide files and Jellyfin's cached copy of the
-    /// guide. The guide is empty until the next guide update.
+    /// guide, and lets Jellyfin drop the old programmes from its database. Nothing is rebuilt:
+    /// the guide is empty until the next guide update.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A task.</returns>
-    Task ClearGuideCacheAsync(CancellationToken cancellationToken);
+    /// <returns><c>false</c> when a sync or guide build is running (nothing was cleared).</returns>
+    Task<bool> ClearGuideCacheAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Adds the M3U tuner and the XMLTV guide source to Live TV, if missing.

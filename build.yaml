@@ -1,6 +1,6 @@
 name: "IPTV-org"
 guid: "dade11c8-fc82-4cf1-9467-d0f1bc76f3fb"
-version: "0.2.3.0"
+version: "0.2.4.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Live TV channels from iptv-org with category filters and a program guide"
@@ -14,6 +14,9 @@ owner: "celesta"
 artifacts:
   - "Jellyfin.Plugin.IptvOrg.dll"
 changelog: |
+  0.2.4.0 - Clearing the guide cache also removes the old programmes from Jellyfin's
+  database (Jellyfin's own guide refresh reads the empty guide). Clearing no longer waits
+  for a running sync or guide build: it reports that one is running instead.
   0.2.3.0 - "Clear guide cache" only clears; it no longer starts a guide rebuild.
   0.2.2.0 - "Clear guide cache" button: removes the built guide, downloaded guide files and
   Jellyfin's cached copy, then rebuilds the guide. After every guide update Jellyfin's

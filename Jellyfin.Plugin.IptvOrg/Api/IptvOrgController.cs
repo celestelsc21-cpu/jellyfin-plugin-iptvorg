@@ -114,12 +114,18 @@ public class IptvOrgController : ControllerBase
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">Cleared.</response>
+    /// <response code="409">A catalog sync or guide build is running.</response>
     /// <returns>No content.</returns>
     [HttpPost("Guide/Clear")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult> ClearGuideCache(CancellationToken cancellationToken)
     {
-        await _service.ClearGuideCacheAsync(cancellationToken).ConfigureAwait(false);
+        if (!await _service.ClearGuideCacheAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return Conflict("Сейчас идёт обновление каналов или телегида. Дождитесь окончания и повторите очистку.");
+        }
+
         return NoContent();
     }
 

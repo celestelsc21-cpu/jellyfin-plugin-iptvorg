@@ -310,9 +310,14 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
     }
 
     /// <inheritdoc />
-    public async Task ClearGuideCacheAsync(CancellationToken cancellationToken)
+    public async Task<bool> ClearGuideCacheAsync(CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        // Never make the settings page wait for a long catalog sync or guide build.
+        if (!await _gate.WaitAsync(TimeSpan.Zero, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
         try
         {
             var removed = 0;
@@ -341,6 +346,10 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
 
                 // The XMLTV provider needs an existing file until the guide is rebuilt.
                 await WriteEmptyGuideAsync(cancellationToken).ConfigureAwait(false);
+
+                // Jellyfin keeps programmes in its own database; only its guide refresh removes
+                // them. With the empty guide it rebuilds nothing, it just drops the old programmes.
+                QueueJellyfinGuideRefresh();
             }
 
             UpdateStatus(s =>
@@ -353,6 +362,7 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
             });
 
             _logger.LogInformation("IPTV-org guide cache cleared ({Count} files removed)", removed);
+            return true;
         }
         finally
         {
