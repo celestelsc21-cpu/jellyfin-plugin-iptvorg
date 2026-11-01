@@ -53,8 +53,6 @@ internal static class GuideSourcePlanner
         foreach (var guide in guides)
         {
             if (string.IsNullOrEmpty(guide.Channel)
-                || guide.Sources is null
-                || guide.Sources.Count == 0
                 || !byChannel.TryGetValue(guide.Channel, out var channelEntries))
             {
                 continue;
@@ -75,30 +73,19 @@ internal static class GuideSourcePlanner
                 ? [guide.Channel]
                 : [guide.Channel + "@" + guide.Feed, guide.Channel];
 
-            foreach (var source in guide.Sources)
+            // 1) Hosted files produced by iptv-org grabber servers: channels are labelled with iptv-org ids.
+            foreach (var source in guide.Sources ?? [])
             {
-                if (!TryGetUrl(source, out var url, out var isGzip))
+                if (TryGetUrl(source, out var url, out var isGzip))
                 {
-                    continue;
+                    AddTargets(plans, url, isGzip, sourceIds, targets);
                 }
+            }
 
-                var key = url.AbsoluteUri;
-                if (!plans.TryGetValue(key, out var plan))
-                {
-                    plan = (url, isGzip, new Dictionary<string, HashSet<string>>(StringComparer.Ordinal));
-                    plans[key] = plan;
-                }
-
-                foreach (var id in sourceIds)
-                {
-                    if (!plan.Map.TryGetValue(id, out var set))
-                    {
-                        set = new HashSet<string>(StringComparer.Ordinal);
-                        plan.Map[id] = set;
-                    }
-
-                    set.UnionWith(targets);
-                }
+            // 2) Sites whose own XMLTV file the plugin reads directly: channels are labelled with site_id.
+            if (!string.IsNullOrEmpty(guide.SiteId) && SiteGuideFiles.TryGet(guide.Site, out var siteUrl) && siteUrl is not null)
+            {
+                AddTargets(plans, siteUrl, siteUrl.AbsolutePath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase), [guide.SiteId], targets);
             }
         }
 
@@ -114,6 +101,32 @@ internal static class GuideSourcePlanner
             .ThenBy(s => s.Url.AbsoluteUri, StringComparer.Ordinal)
             .Take(Math.Max(0, maxSources))
             .ToArray();
+    }
+
+    private static void AddTargets(
+        Dictionary<string, (Uri Url, bool IsGzip, Dictionary<string, HashSet<string>> Map)> plans,
+        Uri url,
+        bool isGzip,
+        IReadOnlyList<string> sourceIds,
+        IReadOnlyList<string> targets)
+    {
+        var key = url.AbsoluteUri;
+        if (!plans.TryGetValue(key, out var plan))
+        {
+            plan = (url, isGzip, new Dictionary<string, HashSet<string>>(StringComparer.Ordinal));
+            plans[key] = plan;
+        }
+
+        foreach (var id in sourceIds)
+        {
+            if (!plan.Map.TryGetValue(id, out var set))
+            {
+                set = new HashSet<string>(StringComparer.Ordinal);
+                plan.Map[id] = set;
+            }
+
+            set.UnionWith(targets);
+        }
     }
 
     /// <summary>

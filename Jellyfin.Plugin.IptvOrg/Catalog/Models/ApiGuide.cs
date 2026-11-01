@@ -16,6 +16,14 @@ internal sealed class ApiGuide
     [JsonPropertyName("feed")]
     public string? Feed { get; set; }
 
+    /// <summary>Gets or sets the site the iptv-org grabber reads the programme from.</summary>
+    [JsonPropertyName("site")]
+    public string? Site { get; set; }
+
+    /// <summary>Gets or sets the channel id on that site.</summary>
+    [JsonPropertyName("site_id")]
+    public string? SiteId { get; set; }
+
     /// <summary>Gets or sets the hosted guide files that contain this channel.</summary>
     [JsonPropertyName("sources")]
     public IReadOnlyList<ApiGuideSource>? Sources { get; set; }

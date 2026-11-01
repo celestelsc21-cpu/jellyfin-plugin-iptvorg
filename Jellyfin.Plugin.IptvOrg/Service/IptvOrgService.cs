@@ -31,7 +31,7 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
     /// <summary>
     /// Largest guide file accepted (compressed size), to protect disk and network.
     /// </summary>
-    internal const long MaxGuideFileBytes = 300L * 1024 * 1024;
+    internal const long MaxGuideFileBytes = 500L * 1024 * 1024;
 
     private const string LiveTvConfigurationKey = "livetv";
 

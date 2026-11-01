@@ -74,6 +74,47 @@ public class GuideSourcePlannerTests
     }
 
     [Fact]
+    public void Plan_KnownSiteWithoutSources_UsesSiteFileWithSiteId()
+    {
+        var entries = new[] { Entry("ChannelOne.ru", "HD") };
+        var guides = new[]
+        {
+            new ApiGuide { Channel = "ChannelOne.ru", Feed = null, Site = "epg.iptvx.one", SiteId = "perviy", Sources = [] }
+        };
+
+        var plan = GuideSourcePlanner.Plan(entries, guides, 10);
+
+        var source = Assert.Single(plan);
+        Assert.Equal("iptvx.one", source.Url.Host);
+        Assert.True(source.IsGzip);
+        Assert.Equal(new[] { "ChannelOne.ru@HD" }, source.IdMap["perviy"]);
+    }
+
+    [Fact]
+    public void Plan_UnknownSiteWithoutSources_PlansNothing()
+    {
+        var entries = new[] { Entry("ChannelOne.ru", null) };
+        var guides = new[] { new ApiGuide { Channel = "ChannelOne.ru", Site = "tv.mail.ru", SiteId = "123" } };
+
+        Assert.Empty(GuideSourcePlanner.Plan(entries, guides, 10));
+    }
+
+    [Fact]
+    public void Plan_SeveralChannelsOnOneSite_ShareOneFile()
+    {
+        var entries = new[] { Entry("A.ru", null), Entry("B.ru", null) };
+        var guides = new[]
+        {
+            new ApiGuide { Channel = "A.ru", Site = "epg.iptvx.one", SiteId = "a" },
+            new ApiGuide { Channel = "B.ru", Site = "epg.iptvx.one", SiteId = "b" }
+        };
+
+        var source = Assert.Single(GuideSourcePlanner.Plan(entries, guides, 10));
+
+        Assert.Equal(2, source.Coverage);
+    }
+
+    [Fact]
     public void Plan_RespectsMaxSources()
     {
         var entries = new[] { Entry("A.ru", null) };
