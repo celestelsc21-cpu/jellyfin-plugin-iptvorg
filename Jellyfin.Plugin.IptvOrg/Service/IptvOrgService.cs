@@ -638,7 +638,12 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
             var writer = XmlWriter.Create(output, new XmlWriterSettings { Async = true, Encoding = Utf8NoBom, Indent = false });
             await using (writer.ConfigureAwait(false))
             {
-                var merger = new XmltvMerger(writer, entries, _timeProvider.GetUtcNow(), LanguageCodes.Normalize(config.PreferredLanguages));
+                var merger = new XmltvMerger(
+                    writer,
+                    entries,
+                    _timeProvider.GetUtcNow(),
+                    LanguageCodes.Normalize(config.PreferredLanguages),
+                    config.ClassifyProgrammes);
                 await merger.WriteHeaderAsync().ConfigureAwait(false);
 
                 for (var i = 0; i < sources.Count; i++)

@@ -29,6 +29,8 @@ internal sealed partial class XmltvMerger
     private readonly HashSet<string> _covered = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _channelNames = new(StringComparer.Ordinal);
     private readonly IReadOnlyList<string> _preferredLanguages;
+    private readonly bool _classify;
+    private readonly Dictionary<string, string> _channelCategories = new(StringComparer.Ordinal);
     private readonly DateTimeOffset _keepFrom;
 
     /// <summary>
@@ -39,7 +41,13 @@ internal sealed partial class XmltvMerger
     /// <param name="entries">Playlist entries.</param>
     /// <param name="now">Current time; programmes that ended more than 6 hours earlier are dropped.</param>
     /// <param name="preferredLanguages">Preferred languages (ISO 639-1), most preferred first; empty keeps everything as is.</param>
-    public XmltvMerger(XmlWriter writer, IReadOnlyList<PlaylistEntry> entries, DateTimeOffset now, IReadOnlyList<string>? preferredLanguages = null)
+    /// <param name="classifyProgrammes">Whether genre markers for Jellyfin's Live TV sections are added (see <see cref="ProgrammeClassifier"/>).</param>
+    public XmltvMerger(
+        XmlWriter writer,
+        IReadOnlyList<PlaylistEntry> entries,
+        DateTimeOffset now,
+        IReadOnlyList<string>? preferredLanguages = null,
+        bool classifyProgrammes = false)
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(entries);
@@ -47,6 +55,14 @@ internal sealed partial class XmltvMerger
         _writer = writer;
         _keepFrom = now.AddHours(-6);
         _preferredLanguages = preferredLanguages ?? [];
+        _classify = classifyProgrammes;
+        foreach (var entry in entries)
+        {
+            if (entry.TvgId is not null)
+            {
+                _channelCategories.TryAdd(entry.TvgId, entry.CategoryId);
+            }
+        }
         _entries = entries;
     }
 
@@ -201,8 +217,15 @@ internal sealed partial class XmltvMerger
                     KeepPreferredLanguage(programme, _preferredLanguages);
                     foreach (var target in targets)
                     {
-                        programme.SetAttributeValue("channel", target);
-                        await programme.WriteToAsync(_writer, cancellationToken).ConfigureAwait(false);
+                        // Channels of different categories may share one programme element.
+                        var copy = targets.Count == 1 ? programme : new XElement(programme);
+                        if (_classify)
+                        {
+                            ProgrammeClassifier.Classify(copy, _channelCategories.GetValueOrDefault(target));
+                        }
+
+                        copy.SetAttributeValue("channel", target);
+                        await copy.WriteToAsync(_writer, cancellationToken).ConfigureAwait(false);
                         filledNow.Add(target);
                         copied++;
                     }

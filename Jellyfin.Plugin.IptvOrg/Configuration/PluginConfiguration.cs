@@ -139,6 +139,13 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool ChannelDescriptions { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets a value indicating whether programmes get the genre markers Jellyfin uses for
+    /// its Live TV sections (films, series, sports, kids, news), derived from Russian title
+    /// prefixes (х/ф, т/с, м/ф…), guide categories and the channel's category.
+    /// </summary>
+    public bool ClassifyProgrammes { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets the maximum number of guide files downloaded per guide update
     /// (protects slow servers and networks).
     /// </summary>

@@ -1,6 +1,6 @@
 name: "IPTV-org"
 guid: "dade11c8-fc82-4cf1-9467-d0f1bc76f3fb"
-version: "0.4.1.0"
+version: "0.5.0.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Live TV channels from iptv-org with category filters and a program guide"
@@ -14,6 +14,10 @@ owner: "celesta"
 artifacts:
   - "Jellyfin.Plugin.IptvOrg.dll"
 changelog: |
+  0.5.0.0 - Genre markers for Jellyfin's Live TV sections (Movies, Series, Sports, Kids,
+  News): derived from Russian title prefixes (х/ф, т/с, м/ф, м/с, д/с — removed from the
+  title), guide categories and the channel's category; series get an episode number when
+  the title or description names one.
   0.4.1.0 - A channel variant without its own guide (e.g. "HD" when only "SD" has one)
   uses the guide of another variant of the same channel; time-shifted variants excluded.
   0.4.0.0 - Preferred languages setting (e.g. "ru, en"): channel name from the guide and

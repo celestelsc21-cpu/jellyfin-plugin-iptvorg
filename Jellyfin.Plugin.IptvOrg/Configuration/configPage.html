@@ -159,6 +159,16 @@
                         </label>
                         <div class="fieldDescription checkboxFieldDescription">Описание видно на странице канала в Jellyfin. Записывается после встроенного обновления телегида Jellyfin.</div>
                     </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgClassify" />
+                            <span>Определять жанры передач для разделов «Фильмы», «Сериалы», «Спорт», «Детям», «Новости»</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            По пометкам в названии (х/ф, т/с, м/ф, м/с, д/с — пометка убирается из названия), категориям в гиде и категории канала.
+                            Сериалом передача считается, только если в названии или описании указан номер серии.
+                        </div>
+                    </div>
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="IptvOrgMaxGuideSources">Максимум файлов гида за обновление</label>
                         <input id="IptvOrgMaxGuideSources" type="number" is="emby-input" min="1" max="50" step="1" required />
@@ -339,6 +349,7 @@
                         $('#IptvOrgEnableGuide').checked = !!config.EnableGuide;
                         $('#IptvOrgGuideNames').checked = config.UseGuideChannelNames !== false;
                         $('#IptvOrgDescriptions').checked = config.ChannelDescriptions !== false;
+                        $('#IptvOrgClassify').checked = config.ClassifyProgrammes !== false;
                         $('#IptvOrgPreferredLanguages').value = (config.PreferredLanguages || []).join(', ');
                         $('#IptvOrgMaxGuideSources').value = config.MaxGuideSources;
                         renderCategories(results[1] || [], config.Categories || [], !!config.IncludeNsfw);
@@ -442,6 +453,7 @@
                         config.EnableGuide = $('#IptvOrgEnableGuide').checked;
                         config.UseGuideChannelNames = $('#IptvOrgGuideNames').checked;
                         config.ChannelDescriptions = $('#IptvOrgDescriptions').checked;
+                        config.ClassifyProgrammes = $('#IptvOrgClassify').checked;
                         config.PreferredLanguages = $('#IptvOrgPreferredLanguages').value.split(/[\s,;]+/).filter(function (v) { return v; });
                         config.MaxGuideSources = parseInt($('#IptvOrgMaxGuideSources').value, 10) || 10;
                         config.Countries = collectFilter('country');
