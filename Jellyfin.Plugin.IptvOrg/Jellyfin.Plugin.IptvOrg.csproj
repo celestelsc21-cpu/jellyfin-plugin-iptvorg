@@ -36,6 +36,8 @@
   <ItemGroup>
     <None Remove="Configuration\configPage.html" />
     <EmbeddedResource Include="Configuration\configPage.html" />
+    <None Remove="Localization\names-ru.json" />
+    <EmbeddedResource Include="Localization\names-ru.json" LogicalName="Jellyfin.Plugin.IptvOrg.Localization.names-ru.json" />
   </ItemGroup>
 
   <ItemGroup>

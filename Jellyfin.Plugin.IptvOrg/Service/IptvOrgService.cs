@@ -13,6 +13,7 @@ using System.Xml;
 using Jellyfin.Plugin.IptvOrg.Catalog;
 using Jellyfin.Plugin.IptvOrg.Configuration;
 using Jellyfin.Plugin.IptvOrg.Guide;
+using Jellyfin.Plugin.IptvOrg.Localization;
 using Jellyfin.Plugin.IptvOrg.Playlist;
 using Jellyfin.Plugin.IptvOrg.Streams;
 using MediaBrowser.Common.Configuration;
@@ -330,10 +331,13 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
                 }
             }
 
-            if (File.Exists(_paths.GuidePath))
+            foreach (var path in new[] { _paths.GuidePath, _paths.NamesPath })
             {
-                File.Delete(_paths.GuidePath);
-                removed++;
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                    removed++;
+                }
             }
 
             var listingsId = GetRegistration().ListingsProviderId;
@@ -390,6 +394,10 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
         var groups = PlaylistBuilder.Collect(catalog, options);
         var counts = PlaylistBuilder.CountByCategory(catalog, includeNsfw: true);
         var filters = FilterCatalogBuilder.Build(catalog, config.IncludeNsfw);
+        var languages = LanguageCodes.Normalize(config.PreferredLanguages);
+        IReadOnlyDictionary<string, string> descriptions = config.ChannelDescriptions
+            ? ChannelDescriptionBuilder.BuildAll(catalog, groups, LanguageCodes.PrefersRussian(languages))
+            : new Dictionary<string, string>();
 
         // Keep only what the final step needs, so the large lists can be collected during
         // the (possibly long) stream checks. Async locals live until the method returns.
@@ -418,14 +426,16 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
             (dead, check) = await CheckStreamsAsync(groups, config, new Progress<double>(p => progress.Report(5 + (0.9 * p))), cancellationToken).ConfigureAwait(false);
         }
 
-        var entries = PlaylistBuilder.Materialize(groups, slim, options, dead);
+        IReadOnlyList<PlaylistEntry> entries = PlaylistBuilder.Materialize(groups, slim, options, dead)
+            .Select(e => e.ChannelId is not null && descriptions.TryGetValue(e.ChannelId, out var d) ? e with { Description = d } : e)
+            .ToArray();
 
         // Keep the original names in channels.json (the guide maps by tvg-id, not by name)
-        // and apply the Russian names from the last guide build only to the playlist.
+        // and apply the guide names (preferred language) from the last guide build only to the playlist.
         var baseEntries = entries;
-        if (config.UseRussianChannelNames)
+        if (config.UseGuideChannelNames)
         {
-            entries = ChannelNames.Apply(entries, await LoadRussianNamesAsync(cancellationToken).ConfigureAwait(false), config.PrefixCategoryInName);
+            entries = ChannelNames.Apply(entries, await LoadGuideNamesAsync(languages, cancellationToken).ConfigureAwait(false), config.PrefixCategoryInName);
         }
 
         var content = M3uWriter.Write(entries);
@@ -533,7 +543,7 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
         return (deadSet, new StreamCheckSummary(probed, deadSet.Count, dropped));
     }
 
-    private async Task<IReadOnlyDictionary<string, string>> LoadRussianNamesAsync(CancellationToken cancellationToken)
+    private async Task<IReadOnlyDictionary<string, string>> LoadGuideNamesAsync(IReadOnlyList<string> languages, CancellationToken cancellationToken)
     {
         if (!File.Exists(_paths.NamesPath))
         {
@@ -545,8 +555,12 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
             var stream = new FileStream(_paths.NamesPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous);
             await using (stream.ConfigureAwait(false))
             {
-                return await JsonSerializer.DeserializeAsync<Dictionary<string, string>>(stream, cancellationToken: cancellationToken).ConfigureAwait(false)
-                    ?? new Dictionary<string, string>();
+                var file = await JsonSerializer.DeserializeAsync<GuideNamesFile>(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                // Names collected for other language preferences are not used.
+                return file is not null && string.Equals(file.Languages, string.Join(',', languages), StringComparison.Ordinal)
+                    ? file.Names
+                    : new Dictionary<string, string>();
             }
         }
         catch (JsonException ex)
@@ -556,20 +570,22 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
         }
     }
 
-    private async Task ApplyRussianNamesAsync(
+    private async Task ApplyGuideNamesAsync(
         IReadOnlyList<PlaylistEntry> baseEntries,
         IReadOnlyDictionary<string, string> found,
         PluginConfiguration config,
         CancellationToken cancellationToken)
     {
         // Names found earlier stay when a source is temporarily unavailable.
-        var names = new Dictionary<string, string>(await LoadRussianNamesAsync(cancellationToken).ConfigureAwait(false), StringComparer.Ordinal);
+        var languages = LanguageCodes.Normalize(config.PreferredLanguages);
+        var names = new Dictionary<string, string>(await LoadGuideNamesAsync(languages, cancellationToken).ConfigureAwait(false), StringComparer.Ordinal);
         foreach (var (tvgId, name) in found)
         {
             names[tvgId] = name;
         }
 
-        await WriteFileAtomicallyAsync(_paths.NamesPath, JsonSerializer.Serialize(names), cancellationToken).ConfigureAwait(false);
+        var file = new GuideNamesFile { Languages = string.Join(',', languages), Names = names };
+        await WriteFileAtomicallyAsync(_paths.NamesPath, JsonSerializer.Serialize(file), cancellationToken).ConfigureAwait(false);
 
         var renamed = ChannelNames.Apply(baseEntries, names, config.PrefixCategoryInName);
         var content = M3uWriter.Write(renamed);
@@ -583,7 +599,7 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
 
         await WriteFileAtomicallyAsync(_paths.PlaylistPath, content, cancellationToken).ConfigureAwait(false);
         _logger.LogInformation(
-            "IPTV-org playlist: Russian names from the guide applied to {Count} channels",
+            "IPTV-org playlist: guide names in the preferred language applied to {Count} channels",
             renamed.Count(e => e.TvgId is not null && names.ContainsKey(e.TvgId)));
     }
 
@@ -614,7 +630,7 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
         var failed = 0;
         int programmes;
         int coveredChannels;
-        IReadOnlyDictionary<string, string> russianNames;
+        IReadOnlyDictionary<string, string> guideNames;
 
         var output = new FileStream(tempGuidePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous);
         await using (output.ConfigureAwait(false))
@@ -622,7 +638,7 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
             var writer = XmlWriter.Create(output, new XmlWriterSettings { Async = true, Encoding = Utf8NoBom, Indent = false });
             await using (writer.ConfigureAwait(false))
             {
-                var merger = new XmltvMerger(writer, entries, _timeProvider.GetUtcNow());
+                var merger = new XmltvMerger(writer, entries, _timeProvider.GetUtcNow(), LanguageCodes.Normalize(config.PreferredLanguages));
                 await merger.WriteHeaderAsync().ConfigureAwait(false);
 
                 for (var i = 0; i < sources.Count; i++)
@@ -653,15 +669,15 @@ internal sealed class IptvOrgService : IIptvOrgService, IDisposable
                 await merger.WriteFooterAsync().ConfigureAwait(false);
                 programmes = merger.ProgrammeCount;
                 coveredChannels = merger.CoveredChannels.Count;
-                russianNames = merger.RussianNames.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+                guideNames = merger.ChannelNames.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
             }
         }
 
         File.Move(tempGuidePath, _paths.GuidePath, overwrite: true);
 
-        if (config.UseRussianChannelNames)
+        if (config.UseGuideChannelNames)
         {
-            await ApplyRussianNamesAsync(entries, russianNames, config, cancellationToken).ConfigureAwait(false);
+            await ApplyGuideNamesAsync(entries, guideNames, config, cancellationToken).ConfigureAwait(false);
         }
 
         UpdateStatus(s =>

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,12 +20,15 @@ namespace Jellyfin.Plugin.IptvOrg.Guide;
 /// </summary>
 internal sealed partial class XmltvMerger
 {
+    private static readonly string[] LocalizedElements = ["title", "sub-title", "desc"];
+    private static readonly HashSet<string> CyrillicLanguages = new(StringComparer.OrdinalIgnoreCase) { "ru", "uk", "be", "bg", "sr", "mk", "kk", "ky", "tg", "mn" };
     private static readonly string[] TimeFormats = ["yyyyMMddHHmmss zzz", "yyyyMMddHHmmsszzz", "yyyyMMddHHmmss", "yyyyMMddHHmm zzz"];
 
     private readonly XmlWriter _writer;
     private readonly IReadOnlyList<PlaylistEntry> _entries;
     private readonly HashSet<string> _covered = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _russianNames = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _channelNames = new(StringComparer.Ordinal);
+    private readonly IReadOnlyList<string> _preferredLanguages;
     private readonly DateTimeOffset _keepFrom;
 
     /// <summary>
@@ -34,13 +38,15 @@ internal sealed partial class XmltvMerger
     /// <param name="writer">Target writer (async-enabled).</param>
     /// <param name="entries">Playlist entries.</param>
     /// <param name="now">Current time; programmes that ended more than 6 hours earlier are dropped.</param>
-    public XmltvMerger(XmlWriter writer, IReadOnlyList<PlaylistEntry> entries, DateTimeOffset now)
+    /// <param name="preferredLanguages">Preferred languages (ISO 639-1), most preferred first; empty keeps everything as is.</param>
+    public XmltvMerger(XmlWriter writer, IReadOnlyList<PlaylistEntry> entries, DateTimeOffset now, IReadOnlyList<string>? preferredLanguages = null)
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(entries);
 
         _writer = writer;
         _keepFrom = now.AddHours(-6);
+        _preferredLanguages = preferredLanguages ?? [];
         _entries = entries;
     }
 
@@ -55,9 +61,9 @@ internal sealed partial class XmltvMerger
     public IReadOnlyCollection<string> CoveredChannels => _covered;
 
     /// <summary>
-    /// Gets the Russian channel names found in the guide files, by playlist <c>tvg-id</c>.
+    /// Gets the channel names in the preferred language found in the guide files, by playlist <c>tvg-id</c>.
     /// </summary>
-    public IReadOnlyDictionary<string, string> RussianNames => _russianNames;
+    public IReadOnlyDictionary<string, string> ChannelNames => _channelNames;
 
     /// <summary>
     /// Writes the document start and the channel elements.
@@ -167,12 +173,12 @@ internal sealed partial class XmltvMerger
                         }
 
                         var channel = (XElement)await XNode.ReadFromAsync(reader, cancellationToken).ConfigureAwait(false);
-                        var russian = FindRussianName(channel);
-                        if (russian is not null)
+                        var preferred = FindPreferredName(channel, _preferredLanguages);
+                        if (preferred is not null)
                         {
                             foreach (var target in named)
                             {
-                                _russianNames.TryAdd(target, russian);
+                                _channelNames.TryAdd(target, preferred);
                             }
                         }
 
@@ -192,6 +198,7 @@ internal sealed partial class XmltvMerger
                     }
 
                     var programme = (XElement)await XNode.ReadFromAsync(reader, cancellationToken).ConfigureAwait(false);
+                    KeepPreferredLanguage(programme, _preferredLanguages);
                     foreach (var target in targets)
                     {
                         programme.SetAttributeValue("channel", target);
@@ -271,37 +278,110 @@ internal sealed partial class XmltvMerger
     }
 
     /// <summary>
-    /// Picks the Russian <c>display-name</c> of an XMLTV channel: one marked <c>lang="ru"</c>
-    /// first, otherwise one without a language that is written in Cyrillic.
+    /// Picks the channel's <c>display-name</c> in the most preferred language: first one marked
+    /// with that language, otherwise (for the first preference only) an unmarked name written
+    /// in the matching script (Cyrillic for <c>ru</c>, <c>uk</c>, <c>be</c>…; Latin otherwise).
     /// </summary>
     /// <param name="channel">The channel element.</param>
+    /// <param name="preferredLanguages">Preferred languages, most preferred first.</param>
     /// <returns>The name, or <c>null</c>.</returns>
-    internal static string? FindRussianName(XElement channel)
+    internal static string? FindPreferredName(XElement channel, IReadOnlyList<string> preferredLanguages)
     {
         ArgumentNullException.ThrowIfNull(channel);
+        ArgumentNullException.ThrowIfNull(preferredLanguages);
 
-        string? unmarked = null;
-        foreach (var element in channel.Elements("display-name"))
+        if (preferredLanguages.Count == 0)
         {
-            var name = element.Value.Trim();
-            if (name.Length == 0 || !CyrillicRegex().IsMatch(name))
+            return null;
+        }
+
+        var names = channel.Elements("display-name")
+            .Select(e => (Name: e.Value.Trim(), Lang: (string?)e.Attribute("lang")))
+            .Where(n => n.Name.Length > 0)
+            .ToArray();
+
+        foreach (var language in preferredLanguages)
+        {
+            foreach (var (name, lang) in names)
+            {
+                if (LanguageMatches(lang, language))
+                {
+                    return name;
+                }
+            }
+        }
+
+        var cyrillic = CyrillicLanguages.Contains(preferredLanguages[0]);
+        foreach (var (name, lang) in names)
+        {
+            if (string.IsNullOrEmpty(lang) && CyrillicRegex().IsMatch(name) == cyrillic)
+            {
+                return name;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Keeps one title, sub-title and description per programme, in the most preferred language
+    /// available. Elements stay untouched when none of them is in a preferred language.
+    /// </summary>
+    /// <param name="programme">Programme element (modified in place).</param>
+    /// <param name="preferredLanguages">Preferred languages, most preferred first.</param>
+    internal static void KeepPreferredLanguage(XElement programme, IReadOnlyList<string> preferredLanguages)
+    {
+        ArgumentNullException.ThrowIfNull(programme);
+        ArgumentNullException.ThrowIfNull(preferredLanguages);
+
+        if (preferredLanguages.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var elementName in LocalizedElements)
+        {
+            var elements = programme.Elements(elementName).ToList();
+            if (elements.Count <= 1)
             {
                 continue;
             }
 
-            var lang = (string?)element.Attribute("lang");
-            if (string.Equals(lang, "ru", StringComparison.OrdinalIgnoreCase))
+            XElement? keep = null;
+            foreach (var language in preferredLanguages)
             {
-                return name;
+                keep = elements.Find(e => LanguageMatches((string?)e.Attribute("lang"), language));
+                if (keep is not null)
+                {
+                    break;
+                }
             }
 
-            if (string.IsNullOrEmpty(lang))
+            if (keep is null)
             {
-                unmarked ??= name;
+                continue;
+            }
+
+            foreach (var element in elements)
+            {
+                if (!ReferenceEquals(element, keep))
+                {
+                    element.Remove();
+                }
             }
         }
+    }
 
-        return unmarked;
+    private static bool LanguageMatches(string? lang, string preferred)
+    {
+        if (string.IsNullOrEmpty(lang))
+        {
+            return false;
+        }
+
+        // "ru" matches "ru" and "ru-RU".
+        return lang.StartsWith(preferred, StringComparison.OrdinalIgnoreCase)
+            && (lang.Length == preferred.Length || lang[preferred.Length] == '-' || lang[preferred.Length] == '_');
     }
 
     [GeneratedRegex(@"\p{IsCyrillic}", RegexOptions.CultureInvariant)]

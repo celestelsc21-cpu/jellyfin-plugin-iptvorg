@@ -12,6 +12,7 @@ namespace Jellyfin.Plugin.IptvOrg.Playlist;
 /// <param name="CategoryId">Primary category id.</param>
 /// <param name="CategoryName">Primary category display name.</param>
 /// <param name="Number">Channel number.</param>
+/// <param name="Description">Channel description (country, regions, languages, categories).</param>
 internal sealed record PlaylistEntry(
     string? TvgId,
     string? ChannelId,
@@ -21,4 +22,5 @@ internal sealed record PlaylistEntry(
     string? LogoUrl,
     string CategoryId,
     string CategoryName,
-    int Number);
+    int Number,
+    string? Description = null);

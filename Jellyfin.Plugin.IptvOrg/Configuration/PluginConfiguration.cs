@@ -120,10 +120,23 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableGuide { get; set; } = true;
 
     /// <summary>
-    /// Gets or sets a value indicating whether channel names are replaced with the Russian
-    /// names found in the program guide (applied after each guide update).
+    /// Gets or sets the preferred languages, most preferred first, as ISO 639-1 codes
+    /// (for example <c>ru</c>, <c>en</c>). Used for channel names and programme titles and
+    /// descriptions taken from the guide, and for the language of channel descriptions.
     /// </summary>
-    public bool UseRussianChannelNames { get; set; } = true;
+    public string[] PreferredLanguages { get; set; } = ["ru"];
+
+    /// <summary>
+    /// Gets or sets a value indicating whether channel names are replaced with the name in the
+    /// preferred language found in the program guide (applied after each guide update).
+    /// </summary>
+    public bool UseGuideChannelNames { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether channels get a description with their country,
+    /// regions, languages and categories (shown on the channel page in Jellyfin).
+    /// </summary>
+    public bool ChannelDescriptions { get; set; } = true;
 
     /// <summary>
     /// Gets or sets the maximum number of guide files downloaded per guide update
@@ -141,6 +154,7 @@ public class PluginConfiguration : BasePluginConfiguration
         Languages = Clean(Languages, toUpper: false);
         Countries = Clean(Countries, toUpper: true);
         Regions = Clean(Regions, toUpper: true);
+        PreferredLanguages = Clean(PreferredLanguages, toUpper: false);
 
         MaxGuideSources = Math.Clamp(MaxGuideSources, 1, MaxGuideSourcesLimit);
         StreamCheckConcurrency = Math.Clamp(StreamCheckConcurrency, 1, MaxStreamCheckConcurrency);

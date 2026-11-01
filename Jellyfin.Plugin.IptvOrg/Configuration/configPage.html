@@ -137,12 +137,27 @@
                             <span>Собирать телегид из источников iptv-org</span>
                         </label>
                     </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="IptvOrgPreferredLanguages">Предпочитаемые языки</label>
+                        <input id="IptvOrgPreferredLanguages" type="text" is="emby-input" maxlength="100" placeholder="ru, en" />
+                        <div class="fieldDescription">
+                            Коды языков через запятую, в порядке предпочтения (например, <code>ru, en</code>). По ним выбираются название канала из телегида,
+                            название и описание передач (если в гиде есть несколько языков), а также язык описания канала (русский или английский).
+                        </div>
+                    </div>
                     <div class="checkboxContainer">
                         <label>
-                            <input is="emby-checkbox" type="checkbox" id="IptvOrgRussianNames" />
-                            <span>Брать русские названия каналов из телегида</span>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgGuideNames" />
+                            <span>Брать название канала из телегида на предпочитаемом языке</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">Если в файле гида у канала есть русское название, оно заменяет название из iptv-org. Применяется после каждого обновления телегида.</div>
+                        <div class="fieldDescription checkboxFieldDescription">Применяется после каждого обновления телегида.</div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgDescriptions" />
+                            <span>Добавлять описание канала: страна, регионы, языки, категории</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Описание видно на странице канала в Jellyfin. Записывается после встроенного обновления телегида Jellyfin.</div>
                     </div>
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="IptvOrgMaxGuideSources">Максимум файлов гида за обновление</label>
@@ -322,7 +337,9 @@
                         $('#IptvOrgPrefix').checked = !!config.PrefixCategoryInName;
                         $('#IptvOrgNsfw').checked = !!config.IncludeNsfw;
                         $('#IptvOrgEnableGuide').checked = !!config.EnableGuide;
-                        $('#IptvOrgRussianNames').checked = config.UseRussianChannelNames !== false;
+                        $('#IptvOrgGuideNames').checked = config.UseGuideChannelNames !== false;
+                        $('#IptvOrgDescriptions').checked = config.ChannelDescriptions !== false;
+                        $('#IptvOrgPreferredLanguages').value = (config.PreferredLanguages || []).join(', ');
                         $('#IptvOrgMaxGuideSources').value = config.MaxGuideSources;
                         renderCategories(results[1] || [], config.Categories || [], !!config.IncludeNsfw);
                         renderStatus(results[2]);
@@ -423,7 +440,9 @@
                         config.PrefixCategoryInName = $('#IptvOrgPrefix').checked;
                         config.IncludeNsfw = $('#IptvOrgNsfw').checked;
                         config.EnableGuide = $('#IptvOrgEnableGuide').checked;
-                        config.UseRussianChannelNames = $('#IptvOrgRussianNames').checked;
+                        config.UseGuideChannelNames = $('#IptvOrgGuideNames').checked;
+                        config.ChannelDescriptions = $('#IptvOrgDescriptions').checked;
+                        config.PreferredLanguages = $('#IptvOrgPreferredLanguages').value.split(/[\s,;]+/).filter(function (v) { return v; });
                         config.MaxGuideSources = parseInt($('#IptvOrgMaxGuideSources').value, 10) || 10;
                         config.Countries = collectFilter('country');
                         config.Regions = collectFilter('region');

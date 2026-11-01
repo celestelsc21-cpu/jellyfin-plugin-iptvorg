@@ -82,5 +82,6 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IStreamChecker, StreamChecker>();
         serviceCollection.AddSingleton<IIptvOrgService, IptvOrgService>();
         serviceCollection.AddHostedService<StartupService>();
+        serviceCollection.AddHostedService<ChannelMetadataService>();
     }
 }

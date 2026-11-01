@@ -13,16 +13,52 @@ using Xunit;
 
 namespace Jellyfin.Plugin.IptvOrg.Tests.Guide;
 
-public class RussianNamesTests
+public class PreferredLanguageTests
 {
+    private static readonly string[] Russian = ["ru"];
+    private static readonly string[] EnglishThenRussian = ["en", "ru"];
+
     [Theory]
     [InlineData("<channel id=\"x\"><display-name lang=\"en\">Channel One</display-name><display-name lang=\"ru\">Первый канал</display-name></channel>", "Первый канал")]
     [InlineData("<channel id=\"x\"><display-name>Россия 1</display-name></channel>", "Россия 1")]
     [InlineData("<channel id=\"x\"><display-name lang=\"uk\">Перший</display-name></channel>", null)]
     [InlineData("<channel id=\"x\"><display-name>Euronews</display-name></channel>", null)]
-    public void FindRussianName_PrefersRussian(string xml, string? expected)
+    [InlineData("<channel id=\"x\"><display-name lang=\"ru-RU\">НТВ</display-name></channel>", "НТВ")]
+    public void FindPreferredName_Russian(string xml, string? expected)
     {
-        Assert.Equal(expected, XmltvMerger.FindRussianName(XElement.Parse(xml)));
+        Assert.Equal(expected, XmltvMerger.FindPreferredName(XElement.Parse(xml), Russian));
+    }
+
+    [Fact]
+    public void FindPreferredName_FollowsOrder()
+    {
+        var channel = XElement.Parse("<channel id=\"x\"><display-name lang=\"ru\">Первый канал</display-name><display-name lang=\"en\">Channel One</display-name></channel>");
+
+        Assert.Equal("Channel One", XmltvMerger.FindPreferredName(channel, EnglishThenRussian));
+        Assert.Null(XmltvMerger.FindPreferredName(channel, []));
+    }
+
+    [Fact]
+    public void KeepPreferredLanguage_KeepsOneTitleAndDescription()
+    {
+        var programme = XElement.Parse(
+            "<programme><title lang=\"en\">News</title><title lang=\"ru\">Новости</title>"
+            + "<desc lang=\"en\">Daily news</desc><desc lang=\"ru\">Выпуск новостей</desc><desc lang=\"de\">Nachrichten</desc></programme>");
+
+        XmltvMerger.KeepPreferredLanguage(programme, Russian);
+
+        Assert.Equal("Новости", Assert.Single(programme.Elements("title")).Value);
+        Assert.Equal("Выпуск новостей", Assert.Single(programme.Elements("desc")).Value);
+    }
+
+    [Fact]
+    public void KeepPreferredLanguage_NoMatch_KeepsEverything()
+    {
+        var programme = XElement.Parse("<programme><title lang=\"en\">News</title><title lang=\"de\">Nachrichten</title></programme>");
+
+        XmltvMerger.KeepPreferredLanguage(programme, Russian);
+
+        Assert.Equal(2, programme.Elements("title").Count());
     }
 
     [Fact]
@@ -58,14 +94,14 @@ public class RussianNamesTests
         var writer = XmlWriter.Create(output, new XmlWriterSettings { Async = true });
         await using (writer)
         {
-            var merger = new XmltvMerger(writer, entries, DateTimeOffset.UtcNow);
+            var merger = new XmltvMerger(writer, entries, DateTimeOffset.UtcNow, Russian);
             await merger.WriteHeaderAsync();
             using var content = new MemoryStream(Encoding.UTF8.GetBytes(xml));
             await merger.AddSourceAsync(source, content, CancellationToken.None);
             await merger.WriteFooterAsync();
 
-            Assert.Equal("Первый канал", merger.RussianNames["ChannelOne.ru"]);
-            Assert.Single(merger.RussianNames);
+            Assert.Equal("Первый канал", merger.ChannelNames["ChannelOne.ru"]);
+            Assert.Single(merger.ChannelNames);
         }
     }
 }
