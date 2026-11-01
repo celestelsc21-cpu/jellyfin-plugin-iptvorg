@@ -137,6 +137,13 @@
                             <span>Собирать телегид из источников iptv-org</span>
                         </label>
                     </div>
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IptvOrgRussianNames" />
+                            <span>Брать русские названия каналов из телегида</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Если в файле гида у канала есть русское название, оно заменяет название из iptv-org. Применяется после каждого обновления телегида.</div>
+                    </div>
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="IptvOrgMaxGuideSources">Максимум файлов гида за обновление</label>
                         <input id="IptvOrgMaxGuideSources" type="number" is="emby-input" min="1" max="50" step="1" required />
@@ -315,6 +322,7 @@
                         $('#IptvOrgPrefix').checked = !!config.PrefixCategoryInName;
                         $('#IptvOrgNsfw').checked = !!config.IncludeNsfw;
                         $('#IptvOrgEnableGuide').checked = !!config.EnableGuide;
+                        $('#IptvOrgRussianNames').checked = config.UseRussianChannelNames !== false;
                         $('#IptvOrgMaxGuideSources').value = config.MaxGuideSources;
                         renderCategories(results[1] || [], config.Categories || [], !!config.IncludeNsfw);
                         renderStatus(results[2]);
@@ -415,6 +423,7 @@
                         config.PrefixCategoryInName = $('#IptvOrgPrefix').checked;
                         config.IncludeNsfw = $('#IptvOrgNsfw').checked;
                         config.EnableGuide = $('#IptvOrgEnableGuide').checked;
+                        config.UseRussianChannelNames = $('#IptvOrgRussianNames').checked;
                         config.MaxGuideSources = parseInt($('#IptvOrgMaxGuideSources').value, 10) || 10;
                         config.Countries = collectFilter('country');
                         config.Regions = collectFilter('region');

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
@@ -16,13 +17,14 @@ namespace Jellyfin.Plugin.IptvOrg.Guide;
 /// playlist channels. The first source that has programmes for a channel wins;
 /// later sources only fill channels that are still empty (fallback).
 /// </summary>
-internal sealed class XmltvMerger
+internal sealed partial class XmltvMerger
 {
     private static readonly string[] TimeFormats = ["yyyyMMddHHmmss zzz", "yyyyMMddHHmmsszzz", "yyyyMMddHHmmss", "yyyyMMddHHmm zzz"];
 
     private readonly XmlWriter _writer;
     private readonly IReadOnlyList<PlaylistEntry> _entries;
     private readonly HashSet<string> _covered = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _russianNames = new(StringComparer.Ordinal);
     private readonly DateTimeOffset _keepFrom;
 
     /// <summary>
@@ -51,6 +53,11 @@ internal sealed class XmltvMerger
     /// Gets the playlist channels that have at least one programme.
     /// </summary>
     public IReadOnlyCollection<string> CoveredChannels => _covered;
+
+    /// <summary>
+    /// Gets the Russian channel names found in the guide files, by playlist <c>tvg-id</c>.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> RussianNames => _russianNames;
 
     /// <summary>
     /// Writes the document start and the channel elements.
@@ -147,11 +154,36 @@ internal sealed class XmltvMerger
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // Keep the loop on the outer level: programmes are direct children of <tv>.
-                while (reader.NodeType == XmlNodeType.Element
-                    && reader.Depth == 1
-                    && string.Equals(reader.LocalName, "programme", StringComparison.Ordinal))
+                // Keep the loop on the outer level: channels and programmes are direct children of <tv>.
+                while (reader.NodeType == XmlNodeType.Element && reader.Depth == 1)
                 {
+                    if (string.Equals(reader.LocalName, "channel", StringComparison.Ordinal))
+                    {
+                        var id = reader.GetAttribute("id");
+                        if (id is null || !source.IdMap.TryGetValue(id, out var named))
+                        {
+                            await reader.SkipAsync().ConfigureAwait(false);
+                            continue;
+                        }
+
+                        var channel = (XElement)await XNode.ReadFromAsync(reader, cancellationToken).ConfigureAwait(false);
+                        var russian = FindRussianName(channel);
+                        if (russian is not null)
+                        {
+                            foreach (var target in named)
+                            {
+                                _russianNames.TryAdd(target, russian);
+                            }
+                        }
+
+                        continue;
+                    }
+
+                    if (!string.Equals(reader.LocalName, "programme", StringComparison.Ordinal))
+                    {
+                        break;
+                    }
+
                     var channelId = reader.GetAttribute("channel");
                     if (channelId is null || !active.TryGetValue(channelId, out var targets) || !IsCurrent(reader.GetAttribute("stop")))
                     {
@@ -237,6 +269,43 @@ internal sealed class XmltvMerger
         content.Position = start;
         return read == 2 && header[0] == 0x1F && header[1] == 0x8B;
     }
+
+    /// <summary>
+    /// Picks the Russian <c>display-name</c> of an XMLTV channel: one marked <c>lang="ru"</c>
+    /// first, otherwise one without a language that is written in Cyrillic.
+    /// </summary>
+    /// <param name="channel">The channel element.</param>
+    /// <returns>The name, or <c>null</c>.</returns>
+    internal static string? FindRussianName(XElement channel)
+    {
+        ArgumentNullException.ThrowIfNull(channel);
+
+        string? unmarked = null;
+        foreach (var element in channel.Elements("display-name"))
+        {
+            var name = element.Value.Trim();
+            if (name.Length == 0 || !CyrillicRegex().IsMatch(name))
+            {
+                continue;
+            }
+
+            var lang = (string?)element.Attribute("lang");
+            if (string.Equals(lang, "ru", StringComparison.OrdinalIgnoreCase))
+            {
+                return name;
+            }
+
+            if (string.IsNullOrEmpty(lang))
+            {
+                unmarked ??= name;
+            }
+        }
+
+        return unmarked;
+    }
+
+    [GeneratedRegex(@"\p{IsCyrillic}", RegexOptions.CultureInvariant)]
+    private static partial Regex CyrillicRegex();
 
     private bool IsCurrent(string? stop)
     {

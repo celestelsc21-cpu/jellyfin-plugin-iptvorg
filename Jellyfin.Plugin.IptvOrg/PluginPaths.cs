@@ -29,6 +29,7 @@ internal sealed class PluginPaths
         EntriesPath = Path.Combine(DataDirectory, IptvOrgConstants.EntriesFileName);
         FiltersPath = Path.Combine(DataDirectory, IptvOrgConstants.FiltersFileName);
         StreamCheckPath = Path.Combine(DataDirectory, IptvOrgConstants.StreamCheckFileName);
+        NamesPath = Path.Combine(DataDirectory, IptvOrgConstants.NamesFileName);
     }
 
     /// <summary>Gets the directory with downloaded API files.</summary>
@@ -54,6 +55,9 @@ internal sealed class PluginPaths
 
     /// <summary>Gets the stream check cache path.</summary>
     public string StreamCheckPath { get; }
+
+    /// <summary>Gets the path of the Russian channel names found in the guide.</summary>
+    public string NamesPath { get; }
 
     /// <summary>Gets Jellyfin's XMLTV cache directory.</summary>
     public string JellyfinXmlTvCacheDirectory { get; }

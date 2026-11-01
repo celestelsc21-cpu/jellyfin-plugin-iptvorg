@@ -33,6 +33,11 @@ internal static class IptvOrgConstants
     public const string FiltersFileName = "filters.json";
 
     /// <summary>
+    /// File name of the Russian channel names found in the guide.
+    /// </summary>
+    public const string NamesFileName = "names.json";
+
+    /// <summary>
     /// File name of the stream check cache.
     /// </summary>
     public const string StreamCheckFileName = "streamcheck.json";

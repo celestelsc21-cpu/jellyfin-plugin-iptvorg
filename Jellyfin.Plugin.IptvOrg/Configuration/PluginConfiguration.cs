@@ -120,6 +120,12 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableGuide { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets a value indicating whether channel names are replaced with the Russian
+    /// names found in the program guide (applied after each guide update).
+    /// </summary>
+    public bool UseRussianChannelNames { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets the maximum number of guide files downloaded per guide update
     /// (protects slow servers and networks).
     /// </summary>
