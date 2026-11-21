@@ -1,3 +1,7 @@
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Jellyfin.Plugin.IptvOrg.Playlist;
 using Jellyfin.Plugin.IptvOrg.Service;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -25,19 +29,25 @@ public class IptvOrgFeedController : ControllerBase
     }
 
     /// <summary>
-    /// Serves the latest generated M3U playlist without creating a copy.
+    /// Serves the latest generated M3U playlist with a linked XMLTV guide for IPTV clients.
     /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The playlist, or 404 if it has not been generated.</returns>
     [HttpGet("Playlist")]
     [Produces("application/x-mpegURL")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public IActionResult GetPlaylist()
+    public async Task<IActionResult> GetPlaylist(CancellationToken cancellationToken)
     {
         var path = _service.PlaylistPath;
-        return System.IO.File.Exists(path)
-            ? PhysicalFile(path, "application/x-mpegURL", enableRangeProcessing: true)
-            : NotFound();
+        if (!System.IO.File.Exists(path))
+        {
+            return NotFound();
+        }
+
+        var playlist = await System.IO.File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+        var epgUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}/IptvOrg/Epg";
+        return Content(M3uWriter.WithGuideUrl(playlist, epgUrl), "application/x-mpegURL", Encoding.UTF8);
     }
 
     /// <summary>

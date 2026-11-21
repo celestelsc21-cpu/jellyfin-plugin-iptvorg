@@ -1,6 +1,6 @@
 name: "IPTV-org"
 guid: "dade11c8-fc82-4cf1-9467-d0f1bc76f3fb"
-version: "0.6.2.0"
+version: "0.6.3.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Live TV channels from iptv-org with category filters and a program guide"
@@ -14,6 +14,10 @@ owner: "celesta"
 artifacts:
   - "Jellyfin.Plugin.IptvOrg.dll"
 changelog: |
+  0.6.3.0 - The HTTP M3U playlist adds url-tvg and x-tvg-url attributes linking
+  the XMLTV EPG endpoint, using the same host and scheme as the playlist request.
+  Existing tvg-id values are preserved for program matching. The local M3U file
+  used by Jellyfin remains unchanged.
   0.6.2.0 - Read-only public HTTP endpoints /IptvOrg/Playlist and /IptvOrg/Epg serve
   the generated M3U and XMLTV files to IPTV clients without copies or extra services.
   0.6.1.0 - Guide by channel name: channels that iptv-org has not linked to any guide (e.g.
