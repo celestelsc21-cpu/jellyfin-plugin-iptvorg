@@ -14,6 +14,7 @@ using System.Xml.Linq;
 using Jellyfin.Plugin.IptvOrg.Configuration;
 using Jellyfin.Plugin.IptvOrg.Guide;
 using Jellyfin.Plugin.IptvOrg.Playlist;
+using Jellyfin.Plugin.IptvOrg.Service;
 
 namespace Jellyfin.Plugin.IptvOrg.Foss;
 
@@ -24,10 +25,10 @@ internal sealed class FossExporter : IFossExporter
 {
     private readonly PluginPaths _paths;
     private readonly IPluginConfigurationAccessor _config;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private int _running;
 
     /// <summary>
-    /// Initializes the exporter.
+    /// Initializes a new instance of the <see cref="FossExporter"/> class.
     /// </summary>
     /// <param name="paths">Plugin data paths.</param>
     /// <param name="config">Current plugin configuration.</param>
@@ -53,7 +54,7 @@ internal sealed class FossExporter : IFossExporter
     /// <returns>Number of channels with programmes, or <c>null</c> if a build is running.</returns>
     public async Task<int?> BuildAsync(CancellationToken cancellationToken)
     {
-        if (!await _gate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+        if (Interlocked.CompareExchange(ref _running, 1, 0) != 0)
         {
             return null;
         }
@@ -102,6 +103,7 @@ internal sealed class FossExporter : IFossExporter
             var readerSettings = new XmlReaderSettings
             {
                 DtdProcessing = DtdProcessing.Prohibit,
+                Async = true,
                 XmlResolver = null,
                 IgnoreWhitespace = true,
                 IgnoreComments = true
@@ -109,22 +111,27 @@ internal sealed class FossExporter : IFossExporter
             using (var input = File.OpenRead(_paths.GuidePath))
             using (var reader = XmlReader.Create(input, readerSettings))
             {
-                while (reader.Read())
+                while (!reader.EOF)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (reader.NodeType != XmlNodeType.Element || reader.LocalName != "programme")
                     {
+                        if (!await reader.ReadAsync().ConfigureAwait(false))
+                        {
+                            break;
+                        }
+
                         continue;
                     }
 
                     var id = reader.GetAttribute("channel");
                     if (id is null || !validIds.Contains(id))
                     {
-                        reader.Skip();
+                        await reader.SkipAsync().ConfigureAwait(false);
                         continue;
                     }
 
-                    var element = (XElement)XNode.ReadFrom(reader);
+                    var element = (XElement)await XNode.ReadFromAsync(reader, cancellationToken).ConfigureAwait(false);
                     if (!XmltvMerger.TryParseXmltvTime((string?)element.Attribute("start"), out var from)
                         || !XmltvMerger.TryParseXmltvTime((string?)element.Attribute("stop"), out var to)
                         || to <= from)
@@ -201,7 +208,7 @@ internal sealed class FossExporter : IFossExporter
         }
         finally
         {
-            _gate.Release();
+            Volatile.Write(ref _running, 0);
         }
     }
 
