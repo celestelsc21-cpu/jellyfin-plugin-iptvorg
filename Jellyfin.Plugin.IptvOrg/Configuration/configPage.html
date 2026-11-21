@@ -22,10 +22,13 @@
                         <button is="emby-button" type="button" id="IptvOrgGuideNow" class="raised emby-button"><span>Обновить телегид сейчас</span></button>
                         <button is="emby-button" type="button" id="IptvOrgClearGuide" class="raised emby-button"><span>Очистить кэш телегида</span></button>
                         <button is="emby-button" type="button" id="IptvOrgRegister" class="raised emby-button"><span>Подключить к Live TV</span></button>
+                        <button is="emby-button" type="button" id="IptvOrgFossBuild" class="raised emby-button"><span>Создать FOSS плейлист и EPG</span></button>
                     </div>
                     <div class="fieldDescription">
                         «Очистить кэш телегида» удаляет собранный гид, скачанные файлы гида, копию гида в кэше Jellyfin и старые передачи из базы Jellyfin; заново гид не собирается до следующего обновления.
                         «Подключить к Live TV» добавляет тюнер M3U (плейлист плагина) и источник гида XMLTV (гид плагина), если их ещё нет.
+                        FOSS создаётся отдельно из уже сформированных каналов и телегида Jellyfin. Названия каналов без [Категория], группы и tvg-id сохраняются.
+                        Адрес FOSS-плейлиста: <code>/IptvOrg/Foss/Playlist</code>. JSON-программа будет привязана автоматически.
                         Задачи плагина и расписание — в «Панель управления → Запланированные задачи → IPTV-org».
                     </div>
 
@@ -466,6 +469,10 @@
                     }
 
                     post('IptvOrg/Guide/Clear', 'Кэш телегида очищен. Старая программа исчезнет из Live TV после встроенного обновления телегида Jellyfin (запущено, обычно до минуты).');
+                });
+
+                $('#IptvOrgFossBuild').addEventListener('click', function () {
+                    post('IptvOrg/Foss/Build', 'FOSS-плейлист и JSON-EPG созданы. Ссылка: ' + ApiClient.getUrl('IptvOrg/Foss/Playlist'));
                 });
 
                 $('#IptvOrgRegister').addEventListener('click', function () {

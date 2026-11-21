@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using Jellyfin.Plugin.IptvOrg.Catalog;
 using Jellyfin.Plugin.IptvOrg.Configuration;
+using Jellyfin.Plugin.IptvOrg.Foss;
 using Jellyfin.Plugin.IptvOrg.Guide;
 using Jellyfin.Plugin.IptvOrg.Service;
 using Jellyfin.Plugin.IptvOrg.Streams;
@@ -81,6 +82,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IIptvOrgClient, IptvOrgClient>();
         serviceCollection.AddSingleton<IStreamChecker, StreamChecker>();
         serviceCollection.AddSingleton<IIptvOrgService, IptvOrgService>();
+        serviceCollection.AddSingleton<IFossExporter, FossExporter>();
         serviceCollection.AddHostedService<StartupService>();
         serviceCollection.AddHostedService<ChannelMetadataService>();
     }
