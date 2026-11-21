@@ -23,6 +23,20 @@ public class M3uWriterTests
     }
 
     [Fact]
+    public void WithGuideUrl_AddsEpgReferencesWithoutChangingChannels()
+    {
+        const string playlist = "#EXTM3U\n#EXTINF:-1 tvg-id=\"Example.ru@SD\",Example\nhttps://example.org/live.m3u8\n";
+
+        var result = M3uWriter.WithGuideUrl(playlist, "http://10.244.100.13:8096/IptvOrg/Epg");
+
+        Assert.Equal(
+            "#EXTM3U url-tvg=\"http://10.244.100.13:8096/IptvOrg/Epg\""
+            + " x-tvg-url=\"http://10.244.100.13:8096/IptvOrg/Epg\"\n"
+            + "#EXTINF:-1 tvg-id=\"Example.ru@SD\",Example\nhttps://example.org/live.m3u8\n",
+            result);
+    }
+
+    [Fact]
     public void Write_OmitsEmptyAttributes()
     {
         var entries = new[] { new PlaylistEntry(null, null, null, "X", "https://a/x", null, "undefined", "Без категории", 1) };
