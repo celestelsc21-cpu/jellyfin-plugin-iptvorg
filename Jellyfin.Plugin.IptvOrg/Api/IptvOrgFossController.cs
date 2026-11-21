@@ -22,7 +22,7 @@ public class IptvOrgFossController : ControllerBase
     private readonly IFossExporter _exporter;
 
     /// <summary>
-    /// Initializes the FOSS controller.
+    /// Initializes a new instance of the <see cref="IptvOrgFossController"/> class.
     /// </summary>
     /// <param name="exporter">FOSS exporter.</param>
     public IptvOrgFossController(IFossExporter exporter)
