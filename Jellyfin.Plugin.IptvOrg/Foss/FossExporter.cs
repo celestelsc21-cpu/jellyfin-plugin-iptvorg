@@ -20,7 +20,7 @@ namespace Jellyfin.Plugin.IptvOrg.Foss;
 /// <summary>
 /// Builds a separate OTT-play FOSS playlist and per-channel JSON guide from the existing Jellyfin files.
 /// </summary>
-internal sealed class FossExporter
+internal sealed class FossExporter : IFossExporter
 {
     private readonly PluginPaths _paths;
     private readonly IPluginConfigurationAccessor _config;
