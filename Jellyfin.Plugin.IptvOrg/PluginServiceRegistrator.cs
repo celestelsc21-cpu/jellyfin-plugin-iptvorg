@@ -82,7 +82,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IIptvOrgClient, IptvOrgClient>();
         serviceCollection.AddSingleton<IStreamChecker, StreamChecker>();
         serviceCollection.AddSingleton<IIptvOrgService, IptvOrgService>();
-        serviceCollection.AddSingleton<FossExporter>();
+        serviceCollection.AddSingleton<IFossExporter, FossExporter>();
         serviceCollection.AddHostedService<StartupService>();
         serviceCollection.AddHostedService<ChannelMetadataService>();
     }
