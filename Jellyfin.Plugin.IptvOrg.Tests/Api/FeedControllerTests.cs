@@ -29,7 +29,7 @@ public class FeedControllerTests
         var path = Path.Combine(Path.GetTempPath(), $"iptvorg-{Guid.NewGuid():N}.m3u");
         if (exists)
         {
-            System.IO.File.WriteAllText(path, "#EXTM3U\n");
+            await System.IO.File.WriteAllTextAsync(path, "#EXTM3U\n");
         }
 
         try
