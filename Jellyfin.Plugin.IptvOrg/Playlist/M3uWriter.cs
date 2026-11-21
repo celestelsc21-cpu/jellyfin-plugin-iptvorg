@@ -39,6 +39,34 @@ internal static class M3uWriter
     }
 
     /// <summary>
+    /// Adds an EPG URL to the M3U header for external IPTV players.
+    /// The on-disk playlist used by Jellyfin remains unchanged.
+    /// </summary>
+    /// <param name="playlist">Generated M3U playlist.</param>
+    /// <param name="guideUrl">Absolute URL of the XMLTV guide.</param>
+    /// <returns>The playlist with both common EPG header attributes.</returns>
+    internal static string WithGuideUrl(string playlist, string guideUrl)
+    {
+        ArgumentNullException.ThrowIfNull(playlist);
+        ArgumentNullException.ThrowIfNull(guideUrl);
+
+        if (!playlist.StartsWith("#EXTM3U\n", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The playlist must start with #EXTM3U.", nameof(playlist));
+        }
+
+        if (!Uri.TryCreate(guideUrl, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new ArgumentException("The guide URL must use HTTP or HTTPS.", nameof(guideUrl));
+        }
+
+        var url = uri.AbsoluteUri;
+        return "#EXTM3U url-tvg=\"" + url + "\" x-tvg-url=\"" + url + "\""
+            + playlist["#EXTM3U".Length..];
+    }
+
+    /// <summary>
     /// Makes a channel name safe for Jellyfin's parser: it takes the text after the last
     /// comma, and drops a leading number followed by a space ("24 Канал" would become "Канал").
     /// </summary>
