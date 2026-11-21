@@ -31,6 +31,7 @@ public class IptvOrgFeedController : ControllerBase
     /// <summary>
     /// Serves the latest generated M3U playlist with a linked XMLTV guide for IPTV clients.
     /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The playlist, or 404 if it has not been generated.</returns>
     [HttpGet("Playlist")]
     [Produces("application/x-mpegURL")]
