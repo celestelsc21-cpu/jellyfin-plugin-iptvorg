@@ -19,13 +19,13 @@ namespace Jellyfin.Plugin.IptvOrg.Api;
 [Route("IptvOrg/Foss")]
 public class IptvOrgFossController : ControllerBase
 {
-    private readonly FossExporter _exporter;
+    private readonly IFossExporter _exporter;
 
     /// <summary>
     /// Initializes the FOSS controller.
     /// </summary>
     /// <param name="exporter">FOSS exporter.</param>
-    public IptvOrgFossController(FossExporter exporter)
+    public IptvOrgFossController(IFossExporter exporter)
     {
         _exporter = exporter;
     }
